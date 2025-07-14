@@ -14,8 +14,17 @@ def roots_bhaskara(a, b, c):
     return x1, x2
 
 
+class ImpedanceMatching:
+    def __init__(self, p_wave_speed, density=0.92e3, central_frequency=5.0e6):
+        self.p_wave_speed = p_wave_speed
+        self.central_frequency = central_frequency
+        self.rho = density
+        self.wave_length = (self.p_wave_speed) / (self.central_frequency)
+        self.thickness = 1 / 4 * self.wave_length
+
+
 class AcousticLens:
-    def __init__(self, c1: float, c2: float, d: float, alpha_max: float, alpha_0: float, h0: float, rho1: float, rho2: float):
+    def __init__(self, c1: float, c2: float, d: float, alpha_max: float, alpha_0: float, h0: float, rho1: float, rho2: float, impedance_matching: bool=False):
         """
         :param c1: Speed of sound (acoustic lens) in (m/s)
         :param c2: Speed of sound (coupling medium) in (m/s)
@@ -46,6 +55,14 @@ class AcousticLens:
 
         self.xlens, self.zlens = self.xy_from_alpha(linspace(-self.alpha_max, self.alpha_max, 1000))
 
+        if impedance_matching:
+            self.impedance_matching = ImpedanceMatching(p_wave_speed=2.9e3, density=1.7e3)
+            self.x_imp, self.z_imp = self.xy_from_alpha(linspace(-self.alpha_max, self.alpha_max, 1000), 
+                                                        thickness=self.impedance_matching.thickness)
+        else:
+            self.impedance_matching = None
+            self.x_imp, self.z_imp = None, None
+
     def h(self, alpha):
         return (-self.b(alpha) - sqrt(self.b(alpha) ** 2 - 4 * self.a * self.c)) / (2 * self.a)
 
@@ -60,21 +77,30 @@ class AcousticLens:
                     -2 * self.d * sin(alpha) + 1 / 2 * 1 / sqrt(self.b(alpha) ** 2 - 4 * self.a * self.c) * (
                         -4 * self.b(alpha) * self.d * sin(alpha)))
 
-    def xy_from_alpha(self, alpha):
+    def xy_from_alpha(self, alpha, thickness=0):
         """Computes the (x,y) coordinates of the lens for a given pipe angle"""
         z = self.h(alpha)
+
+        scale_factor = (z - thickness) / z
+        z *= scale_factor
+
         y = z * cos(alpha)
         x = z * sin(alpha)
         return x, y
 
-    def dydx_from_alpha(self, alpha, mode='full'):
+    def dydx_from_alpha(self, alpha, mode='full', thickness=0):
         """Computes the slope (dy/dx) of the lens for a given alpha"""
 
         h_ = self.h(alpha)
 
+        dh_dAlpha = self.dhda(alpha)
+
+        scale_factor = (dh_dAlpha - thickness) / dh_dAlpha
+        dh_dAlpha *= scale_factor
+
         # Equations (A.19a) and (A.19b) in Appendix A.2.2.
-        dy = self.dhda(alpha) * np.cos(alpha) - h_ * np.sin(alpha)
-        dx = self.dhda(alpha) * np.sin(alpha) + h_ * np.cos(alpha)
+        dy = dh_dAlpha * np.cos(alpha) - h_ * np.sin(alpha)
+        dx = dh_dAlpha * np.sin(alpha) + h_ * np.cos(alpha)
 
         if mode == 'full':
             return  dy/dx

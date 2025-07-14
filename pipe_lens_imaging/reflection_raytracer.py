@@ -3,7 +3,7 @@ from numpy import ndarray
 
 import matplotlib.pyplot as plt
 
-from pipe_lens.raytracing_utils import refraction, reflection, roots_bhaskara
+from pipe_lens_imaging.raytracer_utils import refraction, reflection, roots_bhaskara
 from pipe_lens_imaging.geometric_utils import findIntersectionBetweenAcousticLensAndRay
 from pipe_lens_imaging.raytracer_solver import RayTracerSolver
 from pipe_lens_imaging.raytracer_utils import plot_setup

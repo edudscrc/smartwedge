@@ -1,10 +1,13 @@
 import numpy as np
 import matplotlib
 from matplotlib import pyplot as plt
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
 from pipe_lens_imaging.acoustic_lens import AcousticLens
 from pipe_lens_imaging.focus_raytracer import FocusRayTracer
 from pipe_lens_imaging.pipeline import Pipeline
-from pipe_lens.transducer import Transducer
+from pipe_lens_imaging.transducer import Transducer
 from numpy import pi, sin, cos
 import matplotlib.ticker as ticker
 #
@@ -22,9 +25,8 @@ linewidth = 6.3091141732 # LaTeX linewidth
 
 matplotlib.use('TkAgg')
 plt.rcParams.update({
-    "text.usetex": True,
-    "font.family": "serif",
-    "font.serif": ["Times"],
+    "text.usetex": False,
+    "font.family": "Monaspace Neon",
     "font.size": 10,
     "font.weight": "normal",
 })
@@ -40,7 +42,7 @@ rho_aluminium = 2.710 #kg / m
 rho_water = 1.000
 rho_steel = 7.850
 
-acoustic_lens = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_aluminium, rho_water)
+acoustic_lens = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_aluminium, rho_water, impedance_matching=True)
 
 # Pipeline-related parameters:
 radius = 139.82e-3/2
@@ -66,6 +68,9 @@ arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
 
 tofs, amps = raytracer.solve(*arg)
 
+# print(tofs.shape)
+# print(amps["transmission_loss"].shape)
+
 sol = raytracer._solve(*arg)
 
 #%% Extract refraction/reflection points:
@@ -73,6 +78,8 @@ sol = raytracer._solve(*arg)
 extract_pts = lambda list_dict, key: np.array([dict_i[key] for dict_i in list_dict]).flatten()
 
 xlens, zlens = extract_pts(sol, 'xlens'), extract_pts(sol, 'zlens')
+if acoustic_lens.impedance_matching is not None:
+    ximp, zimp = extract_pts(sol, 'ximp'), extract_pts(sol, 'zimp')
 xpipe, zpipe = extract_pts(sol, 'xpipe'), extract_pts(sol, 'zpipe')
 xf, zf = arg
 
@@ -95,6 +102,8 @@ plt.plot(0, acoustic_lens.d, 'or'   )
 plt.plot(pipeline.xout, pipeline.zout, 'k')
 plt.plot(pipeline.xint, pipeline.zint, 'k')
 plt.plot(acoustic_lens.xlens, acoustic_lens.zlens, 'k')
+if acoustic_lens.impedance_matching is not None:
+    plt.plot(acoustic_lens.x_imp, acoustic_lens.z_imp, 'k')
 plt.axis("equal")
 
 plt.grid()
@@ -106,8 +115,8 @@ plt.ylabel("y-axis / (mm)")
 # Plot rays:
 for n in range(transducer.num_elem):
     plt.plot(
-        [transducer.xt[n], xlens[n], xpipe[n], xf],
-        [transducer.zt[n], zlens[n], zpipe[n], zf],
+        [transducer.xt[n], xlens[n], ximp[n], xpipe[n], xf],
+        [transducer.zt[n], zlens[n], zimp[n], zpipe[n], zf],
         linewidth=.5, color='lime', zorder=1
     )
 plt.plot(xf, zf, 'xr', label='Focus')

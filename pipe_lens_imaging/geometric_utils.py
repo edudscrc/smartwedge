@@ -65,3 +65,24 @@ def findIntersectionBetweenAcousticLensAndRay(a_ray, b_ray, acoustic_lens, tol=1
         alpha_root[ray] = ang_span_finer[dist.argmin()] if dist.min() <= tol else np.nan
 
     return alpha_root
+
+
+def findIntersectionBetweenImpedanceMatchingAndRay(a_ray, b_ray, acoustic_lens, tol=1e-3):
+    alpha_step = np.radians(0.1)
+    ang_span = np.arange(-acoustic_lens.alpha_max, acoustic_lens.alpha_max + alpha_step, alpha_step)
+
+    alpha_root = np.zeros_like(a_ray)
+    for ray in range(len(a_ray)):
+        _a_ray, _b_ray = a_ray[ray], b_ray[ray]
+        x1, y1 = pol2cart(line_equation_polar(ang_span, _a_ray, _b_ray), ang_span)
+        x2, y2 = acoustic_lens.xy_from_alpha(ang_span, thickness=acoustic_lens.impedance_matching.thickness)
+        dist = np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+        alpha_0 = ang_span[dist.argmin()]
+
+        ang_span_finer = np.arange(alpha_0 - alpha_step, alpha_0 + alpha_step, alpha_step / 100)
+        x1, y1 = pol2cart(line_equation_polar(ang_span_finer, _a_ray, _b_ray), ang_span_finer)
+        x2, y2 = acoustic_lens.xy_from_alpha(ang_span_finer, thickness=acoustic_lens.impedance_matching.thickness)
+        dist = np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+        alpha_root[ray] = ang_span_finer[dist.argmin()] if dist.min() <= tol else np.nan
+
+    return alpha_root
