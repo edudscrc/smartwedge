@@ -71,7 +71,7 @@ tofs, amps = raytracer.solve(*arg)
 # print(tofs.shape)
 # print(amps["transmission_loss"].shape)
 
-sol = raytracer._solve(*arg)
+sol = raytracer._solve(*arg, solver="scipy-bounded")
 
 #%% Extract refraction/reflection points:
 
@@ -80,6 +80,8 @@ extract_pts = lambda list_dict, key: np.array([dict_i[key] for dict_i in list_di
 xlens, zlens = extract_pts(sol, 'xlens'), extract_pts(sol, 'zlens')
 if acoustic_lens.impedance_matching is not None:
     ximp, zimp = extract_pts(sol, 'ximp'), extract_pts(sol, 'zimp')
+    xlens_2, zlens_2 = extract_pts(sol, 'xlens_2'), extract_pts(sol, 'zlens_2')
+    ximp_2, zimp_2 = extract_pts(sol, 'ximp_2'), extract_pts(sol, 'zimp_2')
 xpipe, zpipe = extract_pts(sol, 'xpipe'), extract_pts(sol, 'zpipe')
 xf, zf = arg
 
@@ -113,12 +115,26 @@ plt.xlabel("x-axis / (mm)")
 plt.ylabel("y-axis / (mm)")
 
 # Plot rays:
-for n in range(transducer.num_elem):
-    plt.plot(
-        [transducer.xt[n], xlens[n], ximp[n], xpipe[n], xf],
-        [transducer.zt[n], zlens[n], zimp[n], zpipe[n], zf],
-        linewidth=.5, color='lime', zorder=1
-    )
+for iter, n in enumerate(range(transducer.num_elem)):
+    if iter == 0:
+        plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
+        plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5, label="Lens -> Imp. (1)")
+        plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5, label="Imp. -> Lens")
+        plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5, label="Lens -> Imp. (2)")
+        plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
+        plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
+    else:
+        plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5)
+        plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5)
+        plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5)
+        plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5)
+        plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5)
+        plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5)
+    # plt.plot(
+    #     [transducer.xt[n], xlens[n], ximp[n], xlens_2[n], ximp_2[n], xpipe[n], xf],
+    #     [transducer.zt[n], zlens[n], zimp[n], zlens_2[n], zimp_2[n], zpipe[n], zf],
+    #     linewidth=.5, color='lime', zorder=1
+    # )
 plt.plot(xf, zf, 'xr', label='Focus')
 plt.legend()
 plt.tight_layout()

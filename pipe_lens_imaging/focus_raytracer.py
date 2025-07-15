@@ -2,7 +2,7 @@ import numpy as np
 from numpy import ndarray
 from numpy.linalg import norm
 
-from pipe_lens_imaging.raytracer_utils import roots_bhaskara, snell, uhp
+from pipe_lens_imaging.raytracer_utils import roots_bhaskara, snell, uhp, rhp
 from pipe_lens_imaging.geometric_utils import findIntersectionBetweenImpedanceMatchingAndRay, findIntersectionBetweenAcousticLensAndRay
 from pipe_lens_imaging.ultrasound import far_field_directivity_solid, liquid2solid_t_coeff
 from pipe_lens_imaging.raytracer_solver import RayTracerSolver
@@ -161,6 +161,8 @@ class FocusRayTracer(RayTracerSolver):
             return {
                 'xlens': xlens, 'zlens': ylens,
                 'ximp': x_impedance_intersection, 'zimp': z_impedance_intersection,
+                'xlens_2': x_lens_intersection, 'zlens_2': z_lens_intersection,
+                'ximp_2': x_impedance_intersection_2, 'zimp_2': z_impedance_intersection_2,
                 'xpipe': xcirc, 'zpipe': ycirc,
                 'dist': dist, 'xf': xf, 'zf': yf,
                 'interface_1_imp': [inc_1_imp, ref_1_imp],

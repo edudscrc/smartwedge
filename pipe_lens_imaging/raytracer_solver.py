@@ -211,7 +211,7 @@ class RayTracerSolver(ABC):
 
         for jj in range(N):
             cost_fun_i = lambda x, idx=jj: self._dist_kernel(
-                xc, yc, xf[idx:idx + 1], yf[idx:idx + 1], alpha=np.array([x])
+                xc, yc, xf[idx:idx + 1], yf[idx:idx + 1], acurve=np.array([x])
             )['dist'][0]
 
             res = minimize_scalar(
@@ -225,7 +225,7 @@ class RayTracerSolver(ABC):
             alphaa[jj] = res.x if res.fun <= tol else np.nan
 
         # Evaluate final distances with best alphas
-        dic = self._dist_kernel(xc, yc, xf, yf, alpha=alphaa)
+        dic = self._dist_kernel(xc, yc, xf, yf, acurve=alphaa)
 
         # Compute max and min distances
         dist_array = dic['dist']
