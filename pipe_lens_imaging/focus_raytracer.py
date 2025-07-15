@@ -2,7 +2,7 @@ import numpy as np
 from numpy import ndarray
 from numpy.linalg import norm
 
-from pipe_lens_imaging.raytracer_utils import roots_bhaskara, snell, uhp, rhp
+from pipe_lens_imaging.raytracer_utils import roots_bhaskara, snell, uhp, reflection, refraction
 from pipe_lens_imaging.geometric_utils import findIntersectionBetweenImpedanceMatchingAndRay, findIntersectionBetweenAcousticLensAndRay
 from pipe_lens_imaging.ultrasound import far_field_directivity_solid, liquid2solid_t_coeff, liquid2solid_r_coeff, solid2liquid_t_coeff
 from pipe_lens_imaging.raytracer_solver import RayTracerSolver
@@ -128,16 +128,17 @@ class FocusRayTracer(RayTracerSolver):
             x_impedance_intersection, z_impedance_intersection = self.acoustic_lens.xy_from_alpha(alpha_impedance, thickness=impedance_thickness)
 
             # Reflection: Impedance -> Lens
-            gamma_imp_refl_1, inc_imp_1, ref_imp_1 = snell(c_impedance, c_impedance, gamma_imp, self.acoustic_lens.dydx_from_alpha(alpha_impedance, thickness=impedance_thickness))
+            gamma_imp_refl_1, _, inc_imp_1, ref_imp_1 = reflection(gamma_imp, self.acoustic_lens.dydx_from_alpha(alpha_impedance, thickness=impedance_thickness))
+            # gamma_imp_refl_1, inc_imp_1, ref_imp_1 = snell(c_impedance, c_impedance, gamma_imp, self.acoustic_lens.dydx_from_alpha(alpha_impedance, thickness=impedance_thickness))
             a_l_imp_1 = np.tan(uhp(gamma_imp_refl_1))
             b_l_imp_1 = z_impedance_intersection - a_l_imp_1 * x_impedance_intersection
 
             alpha_lens_refl = findIntersectionBetweenAcousticLensAndRay(a_l_imp_1, b_l_imp_1, self.acoustic_lens)
             x_lens_intersection, z_lens_intersection = self.acoustic_lens.xy_from_alpha(alpha_lens_refl)
-            # alpha_intersection = np.arctan2(x_lens_intersection, z_lens_intersection)
 
             # Reflection: Lens -> Impedance
-            gamma_imp_refl_2, inc_1_imp_refl, ref_1_imp_refl = snell(c_impedance, c_impedance, gamma_imp_refl_1, self.acoustic_lens.dydx_from_alpha(alpha_lens_refl))
+            gamma_imp_refl_2, _, inc_1_imp_refl, ref_1_imp_refl = reflection(gamma_imp_refl_1, self.acoustic_lens.dydx_from_alpha(alpha_lens_refl))
+            # gamma_imp_refl_2, inc_1_imp_refl, ref_1_imp_refl = snell(c_impedance, c_impedance, gamma_imp_refl_1, self.acoustic_lens.dydx_from_alpha(alpha_lens_refl))
             a_l_imp_2 = np.tan(uhp(gamma_imp_refl_2))
             b_l_imp_2 = z_lens_intersection - a_l_imp_2 * x_lens_intersection
 
