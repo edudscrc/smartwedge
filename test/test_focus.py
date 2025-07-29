@@ -56,7 +56,7 @@ transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
 transducer.zt += acoustic_lens.d
 
 # Raytracer engine to find time of flight between emitter and focus:
-raytracer = FocusRayTracer(acoustic_lens, pipeline, transducer, transmission_loss=False, directivity=True)
+raytracer = FocusRayTracer(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
 
 arg = (
     0,
@@ -67,6 +67,9 @@ arg = rotate_point(arg, theta_rad=0)
 arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
 
 tofs, amps = raytracer.solve(*arg)
+
+print(f'{tofs.shape = }')
+print(f'{amps['transmission_loss'].shape = }')
 
 # print(tofs.shape)
 # print(amps["transmission_loss"].shape)
@@ -114,30 +117,59 @@ plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x
 plt.xlabel("x-axis / (mm)")
 plt.ylabel("y-axis / (mm)")
 
-# Plot rays:
-for iter, n in enumerate(range(transducer.num_elem)):
-    # print(f'x: {ximp[n]} == {ximp_2[n]} || z: {zimp[n]} == {zimp_2[n]}')
-    if iter == 0:
-        plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
-        plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5, label="Lens -> Imp. (1)")
-        plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5, label="Imp. -> Lens")
-        plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5, label="Lens -> Imp. (2)")
-        plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
-        plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
-    else:
-        plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5)
-        plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5)
-        plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5)
-        plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5)
-        plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5)
-        plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5)
-    # plt.plot(
-    #     [transducer.xt[n], xlens[n], ximp[n], xlens_2[n], ximp_2[n], xpipe[n], xf],
-    #     [transducer.zt[n], zlens[n], zimp[n], zlens_2[n], zimp_2[n], zpipe[n], zf],
-    #     linewidth=.5, color='lime', zorder=1
-    # )
+if acoustic_lens.impedance_matching is not None:
+    for iter, n in enumerate(range(transducer.num_elem)):
+        # print(f'x: {ximp[n]} == {ximp_2[n]} || z: {zimp[n]} == {zimp_2[n]}')
+        if iter == 0:
+            plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
+            plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5, label="Lens -> Imp. (1)")
+            plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5, label="Imp. -> Lens")
+            plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5, label="Lens -> Imp. (2)")
+            plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
+            plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
+        else:
+            plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5 if iter != 58 else 1.)
+            plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5 if iter != 58 else 1.)
+            plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5 if iter != 58 else 1.)
+            plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5 if iter != 58 else 1.)
+            plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5 if iter != 58 else 1.)
+            plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5 if iter != 58 else 1.)
+        # plt.plot(
+        #     [transducer.xt[n], xlens[n], ximp[n], xlens_2[n], ximp_2[n], xpipe[n], xf],
+        #     [transducer.zt[n], zlens[n], zimp[n], zlens_2[n], zimp_2[n], zpipe[n], zf],
+        #     linewidth=.5, color='lime', zorder=1
+        # )
+else:
+    for iter, n in enumerate(range(transducer.num_elem)):
+        if iter == 0:
+            plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
+            plt.plot([xlens[n], xpipe[n]], [zlens[n], zpipe[n]], "C1", linewidth=.5, label="Lens -> Pipe")
+            plt.plot([xpipe[n], xf], [zpipe[n], zf], "C2", linewidth=.5, label="Pipe -> Focus")
+        else:
+            plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5)
+            plt.plot([xlens[n], xpipe[n]], [zlens[n], zpipe[n]], "C1", linewidth=.5)
+            plt.plot([xpipe[n], xf], [zpipe[n], zf], "C2", linewidth=.5)
+
+
 plt.plot(xf, zf, 'xr', label='Focus')
 plt.legend()
 plt.tight_layout()
 plt.ylim(-5e-3, acoustic_lens.d + 5e-3)
+plt.show()
+
+plt.figure(figsize=(10, 5))
+plt.subplot(1, 2, 1)
+plt.plot(np.arange(transducer.num_elem), tofs[:, 0], '-o', markersize=3)
+plt.title("Time of Flight (TOF) para o Foco")
+plt.xlabel("Elemento do Transdutor")
+plt.ylabel("Time of Flight")
+plt.grid(True)
+fmc_data = amps['transmission_loss'][:, 0, 0]
+plt.subplot(1, 2, 2)
+plt.plot(np.arange(transducer.num_elem), fmc_data, '-o', markersize=3)
+plt.title("Transmission Loss")
+plt.xlabel("Elemento do Transdutor")
+plt.ylabel("Amplitude")
+plt.grid(True)
+plt.tight_layout(rect=[0, 0, 1, 0.96])
 plt.show()

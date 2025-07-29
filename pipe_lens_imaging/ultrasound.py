@@ -90,6 +90,44 @@ def liquid2solid_r_coeff(theta_p1, theta_p2, cp1, cp2, cs2, rho1, rho2):
 
     return (delta2 - delta1) / (delta2 + delta1)
 
+def solid2solid_r_coeff(theta_p1, theta_p2, cp1, cp2, cs1, cs2, rho1, rho2):
+    """
+    Calculates the reflection coefficients for a solid-solid interface (P-wave incidence).
+    Returns Rpp (P-to-P reflection) and Rpsv (P-to-SV reflection).
+    """
+    theta_p1 = abs(theta_p1)
+    theta_p2 = abs(theta_p2)
+
+    # Snell's Law to find shear angles
+    theta_s1 = arcsin(cs1 * sin(theta_p1) / cp1)
+    theta_s2 = arcsin(cs2 * sin(theta_p1) / cp1)
+
+    # Intermediate terms from Eqs. (6.162) and (6.163)
+    d1 = (cs1 / cp1) * sin(2 * theta_s1) * sin(theta_p1) + cos(2 * theta_s1) * cos(theta_s1)
+    d2 = (cs1 / cp1) * sin(2 * theta_p1) * sin(theta_s1) + cos(2 * theta_s1) * cos(theta_p1)
+
+    l1 = (cs1 / cp2) * sin(2 * theta_s1) * sin(theta_p2) + (rho2 / rho1) * cos(2 * theta_s2) * cos(theta_s1)
+    m1 = -(cs1 / cs2) * sin(2 * theta_s1) * cos(theta_s2) - (rho2 / rho1) * sin(2 * theta_s2) * cos(theta_s1)
+    l2 = (cs1 / cp2) * cos(2 * theta_s1) * sin(theta_p2) - (rho2 / rho1) * cos(2 * theta_s2) * sin(theta_s1)
+    m2 = (cs1 / cs2) * cos(2 * theta_s1) * cos(theta_s2) + (rho2 / rho1) * sin(2 * theta_s2) * sin(theta_s1)
+    l3 = -(cp1 / cp2) * cos(2 * theta_s1) * cos(theta_p2) + (rho2 * cs2**2) / (rho1 * cp1 * cp2) * sin(2 * theta_p2) * sin(theta_p1)
+    m3 = -(cp1 / cs2) * cos(2 * theta_s1) * sin(theta_s2) + (rho2 * cs2**2) / (rho1 * cp1 * cs2) * cos(2 * theta_s2) * sin(theta_p1)
+    l4 = -(cs1**2) / (cp1 * cp2) * sin(2 * theta_p1) * cos(theta_p2) - (rho2 * cs2**2) / (rho1 * cp1 * cp2) * sin(2 * theta_p2) * cos(theta_p1)
+    m4 = (cs1**2) / (cp1 * cs2) * sin(2 * theta_p1) * sin(theta_s2) - (rho2 * cs2**2) / (rho1 * cp1 * cs2) * cos(2 * theta_s2) * cos(theta_p1)
+
+    # Denominator from Eq. (6.166)
+    delta = (l2/d1 + l4/d2) * (m1/d1 - m3/d2) - (l1/d1 - l3/d2) * (m2/d1 - m4/d2)
+
+    # Potential amplitude ratios from Eq. (6.164)
+    Ar_Ai = ((l2/d1 - l4/d2)*(m1/d1 - m3/d2) - (l1/d1 - l3/d2)*(m2/d1 + m4/d2)) / delta
+    Br_Ai = (2 * (l2/d1)*(m4/d2) - 2 * (m2/d1)*(l4/d2)) / delta
+    
+    # Velocity reflection coefficients from Eq. (6.168)
+    Rpp = Ar_Ai  # v_R_pp = Ar/Ai
+    Rpsv = (cp1 / cs1) * Br_Ai # v_R_psv = (cp1/cs1) * (Br/Ai)
+    
+    return Rpp, Rpsv
+
 def sinc(x):
     return sin(x) / x
 

@@ -4,7 +4,7 @@ from numpy.linalg import norm
 
 from pipe_lens_imaging.raytracer_utils import roots_bhaskara, snell, uhp, reflection, refraction
 from pipe_lens_imaging.geometric_utils import findIntersectionBetweenImpedanceMatchingAndRay, findIntersectionBetweenAcousticLensAndRay
-from pipe_lens_imaging.ultrasound import far_field_directivity_solid, liquid2solid_t_coeff, liquid2solid_r_coeff, solid2liquid_t_coeff
+from pipe_lens_imaging.ultrasound import far_field_directivity_solid, liquid2solid_t_coeff, liquid2solid_r_coeff, solid2liquid_t_coeff, solid2solid_t_coeff, solid2solid_r_coeff
 from pipe_lens_imaging.raytracer_solver import RayTracerSolver
 
 __all__ = ['FocusRayTracer']
@@ -15,6 +15,9 @@ class FocusRayTracer(RayTracerSolver):
     def get_tofs(self, solution):
         n_elem = self.transducer.num_elem
         n_focii = len(solution[0]['xlens'])
+
+        print(f'{n_elem = }')
+        print(f'{n_focii = }')
 
         c1, c2, c3 = self.get_speeds()
 
@@ -48,9 +51,9 @@ class FocusRayTracer(RayTracerSolver):
 
             if self.transmission_loss:
                 if self.acoustic_lens.impedance_matching is not None:
-                    Tpp_1_imp, _ = liquid2solid_t_coeff(
+                    Tpp_1_imp, _ = solid2solid_t_coeff(
                         solution[j]['interface_1_imp'][0][i], solution[j]['interface_1_imp'][1][i],
-                        c1, c_impedance, c1/2,
+                        c1, c_impedance, c1/2, c_impedance/2,
                         self.acoustic_lens.rho1, self.acoustic_lens.impedance_matching.rho
                     )
                     Tpp_imp_1 = liquid2solid_r_coeff(
@@ -58,12 +61,12 @@ class FocusRayTracer(RayTracerSolver):
                         c_impedance, c1, c1/2,
                         self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
                     )
-                    Tpp_1_imp_refl = liquid2solid_r_coeff(
+                    Tpp_1_imp_refl, _ = solid2solid_r_coeff(
                         solution[j]['interface_1_imp_refl'][0][i], solution[j]['interface_1_imp_refl'][1][i],
-                        c1, c_impedance, c_impedance/2,
+                        c1, c_impedance, c_impedance/2, c1/2,
                         self.acoustic_lens.rho1, self.acoustic_lens.impedance_matching.rho
                     )
-                    Tpp_imp_2, _ = liquid2solid_t_coeff(
+                    Tpp_imp_2, _ = solid2liquid_t_coeff(
                         solution[j]['interface_imp_2'][0][i], solution[j]['interface_imp_2'][1][i],
                         c_impedance, c2, c_impedance/2,
                         self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
@@ -75,7 +78,7 @@ class FocusRayTracer(RayTracerSolver):
                     )
                     amplitudes["transmission_loss"][j, :, i] *= Tpp_1_imp * Tpp_imp_1 * Tpp_1_imp_refl * Tpp_imp_2 * Tpp_23
                 else:
-                    Tpp_12, _ = liquid2solid_t_coeff(
+                    Tpp_12, _ = solid2liquid_t_coeff(
                         solution[j]['interface_12'][0][i], solution[j]['interface_12'][1][i],
                         c1, c2, c1/2,
                         self.acoustic_lens.rho1, self.acoustic_lens.rho2
@@ -97,14 +100,21 @@ class FocusRayTracer(RayTracerSolver):
         coord_elements_mat = np.tile(coord_elements[:, :, np.newaxis], (1, 1, n_focii))
         coord_reflectors_mat = np.tile(coords_reflectors[:, :, np.newaxis], (1, 1, n_elem))
 
-        d1 = norm(coords_lens - coord_elements_mat, axis=1)
-        d2 = norm(coords_imp - coords_lens, axis=1)
-        d3 = norm(coords_lens_2 - coords_imp, axis=1)
-        d4 = norm(coords_imp_2 - coords_lens_2, axis=1)
-        d5 = norm(coords_outer - coords_imp_2, axis=1)
-        d6 = norm(coords_outer - coord_reflectors_mat.T, axis=1)
+        d1 = norm(coords_lens - coord_elements_mat, axis=1)             # Transd. -> Lens
+        if self.acoustic_lens.impedance_matching is not None:
+            d2 = norm(coords_imp - coords_lens, axis=1)                 # Lens -> Imp.
+            d3 = norm(coords_lens_2 - coords_imp, axis=1)               # Imp. -> Lens
+            d4 = norm(coords_imp_2 - coords_lens_2, axis=1)             # Lens -> Imp.
+            d5 = norm(coords_outer - coords_imp_2, axis=1)              # Imp. -> Pipe
+            d6 = norm(coords_outer - coord_reflectors_mat.T, axis=1)    # Pipe -> Focii
+        else:
+            d2 = norm(coords_outer - coords_lens, axis=1)               # Lens -> Pipe
+            d3 = norm(coords_outer - coord_reflectors_mat.T, axis=1)    # Pipe -> Focii
 
-        tofs = d1 / c1 + d2 / c_impedance + d3 / c_impedance + d4 / c_impedance + d5 / c2 + d6 / c3
+        if self.acoustic_lens.impedance_matching is not None:
+            tofs = d1 / c1 + d2 / c_impedance + d3 / c_impedance + d4 / c_impedance + d5 / c2 + d6 / c3
+        else:
+            tofs = d1 / c1 + d2 / c2 + d3 / c3
         return tofs, amplitudes
 
     def _dist_kernel(self, xc: float, zc: float, xf: ndarray, yf: ndarray, acurve: float):
