@@ -56,7 +56,7 @@ class AcousticLens:
         self.xlens, self.zlens = self.xy_from_alpha(linspace(-self.alpha_max, self.alpha_max, 1000))
 
         if impedance_matching:
-            self.impedance_matching = ImpedanceMatching(p_wave_speed=2.9e3, density=1.7e3)
+            self.impedance_matching = ImpedanceMatching(p_wave_speed=2.9e3, density=1.7)
             self.x_imp, self.z_imp = self.xy_from_alpha(linspace(-self.alpha_max, self.alpha_max, 1000), 
                                                         thickness=self.impedance_matching.thickness)
         else:

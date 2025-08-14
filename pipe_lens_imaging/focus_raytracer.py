@@ -4,7 +4,7 @@ from numpy.linalg import norm
 
 from pipe_lens_imaging.raytracer_utils import roots_bhaskara, snell, uhp, reflection, refraction
 from pipe_lens_imaging.geometric_utils import findIntersectionBetweenImpedanceMatchingAndRay, findIntersectionBetweenAcousticLensAndRay
-from pipe_lens_imaging.ultrasound import far_field_directivity_solid, liquid2solid_t_coeff, liquid2solid_r_coeff, solid2liquid_t_coeff, solid2solid_t_coeff, solid2solid_r_coeff
+from pipe_lens_imaging.ultrasound import far_field_directivity_solid, fluid2solid_t_coeff, fluid2solid_r_coeff, solid2fluid_t_coeff, solid2solid_t_coeff, solid2solid_r_coeff
 from pipe_lens_imaging.raytracer_solver import RayTracerSolver
 
 __all__ = ['FocusRayTracer']
@@ -51,44 +51,78 @@ class FocusRayTracer(RayTracerSolver):
 
             if self.transmission_loss:
                 if self.acoustic_lens.impedance_matching is not None:
-                    Tpp_1_imp, _ = solid2solid_t_coeff(
+                    # Transmissão - Alumínio -> Camada de Casamento
+                    Tpp_1_imp = solid2solid_t_coeff(
                         solution[j]['interface_1_imp'][0][i], solution[j]['interface_1_imp'][1][i],
                         c1, c_impedance, c1/2, c_impedance/2,
                         self.acoustic_lens.rho1, self.acoustic_lens.impedance_matching.rho
                     )
-                    Tpp_imp_1 = liquid2solid_r_coeff(
+
+                    ##########################
+                    # Considerando reflexões #
+                    ##########################
+
+                    # Reflexão - Interface: Camada de Casamento - Água
+                    Tpp_imp_1 = fluid2solid_r_coeff(
                         solution[j]['interface_imp_1'][0][i], solution[j]['interface_imp_1'][1][i],
-                        c_impedance, c1, c1/2,
-                        self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
-                    )
-                    Tpp_1_imp_refl, _ = solid2solid_r_coeff(
-                        solution[j]['interface_1_imp_refl'][0][i], solution[j]['interface_1_imp_refl'][1][i],
-                        c1, c_impedance, c_impedance/2, c1/2,
-                        self.acoustic_lens.rho1, self.acoustic_lens.impedance_matching.rho
-                    )
-                    Tpp_imp_2, _ = solid2liquid_t_coeff(
-                        solution[j]['interface_imp_2'][0][i], solution[j]['interface_imp_2'][1][i],
-                        c_impedance, c2, c_impedance/2,
+                        c_impedance, c2, c2/2,
                         self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
                     )
-                    Tpp_23, _ = liquid2solid_t_coeff(
-                        solution[j]['interface_23'][1][i], solution[j]['interface_23'][0][i],
-                        c3, c2, c3/2,
-                        self.pipeline.rho, self.acoustic_lens.rho2
+
+                    # Reflexão - Interface: Camada de Casamento - Alumínio
+                    Tpp_1_imp_refl, _ = solid2solid_r_coeff(
+                        solution[j]['interface_1_imp_refl'][0][i], solution[j]['interface_1_imp_refl'][1][i],
+                        c_impedance, c1, c_impedance/2, c1/2,
+                        self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
                     )
-                    amplitudes["transmission_loss"][j, :, i] *= Tpp_1_imp * Tpp_imp_1 * Tpp_1_imp_refl * Tpp_imp_2 * Tpp_23
+
+                    # Transmissão - Camada de Casamento -> Água
+                    Tpp_imp_2, _ = solid2fluid_t_coeff(
+                        solution[j]['interface_imp_2'][0][i], solution[j]['interface_imp_2'][1][i],
+                        c_impedance, c_impedance/2, c2,
+                        self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
+                    )
+
+                    # Transmissão - Água -> Tubo
+                    Tpp_23, _ = fluid2solid_t_coeff(
+                        solution[j]['interface_23'][0][i], solution[j]['interface_23'][1][i],
+                        c2, c3, c3/2,
+                        self.acoustic_lens.rho2, self.pipeline.rho
+                    )
+
+                    ############################
+                    # Sem considerar reflexões #
+                    ############################
+
+                    T_imp2water, _ = solid2fluid_t_coeff(
+                        solution[j]['interface_imp_2_no_refl'][0][i], solution[j]['interface_imp_2_no_refl'][1][i],
+                        c_impedance, c_impedance/2, c2,
+                        self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
+                    )
+
+                    T_water2pipe, _ = fluid2solid_t_coeff(
+                        solution[j]['interface_23_no_refl'][0][i], solution[j]['interface_23_no_refl'][1][i],
+                        c2, c3, c3/2,
+                        self.acoustic_lens.rho2, self.pipeline.rho
+                    )
+
+                    transmission_with_refl = Tpp_1_imp * Tpp_imp_1 * Tpp_1_imp_refl * Tpp_imp_2 * Tpp_23
+                    transmission_without_refl = Tpp_1_imp * T_imp2water * T_water2pipe
+
+                    amplitudes["transmission_loss"][j, :, i] = transmission_with_refl + transmission_without_refl
                 else:
-                    Tpp_12, _ = solid2liquid_t_coeff(
-                        solution[j]['interface_12'][0][i], solution[j]['interface_12'][1][i],
-                        c1, c2, c1/2,
-                        self.acoustic_lens.rho1, self.acoustic_lens.rho2
-                    )
-                    Tpp_23, _ = liquid2solid_t_coeff(
-                        solution[j]['interface_23'][1][i], solution[j]['interface_23'][0][i],
-                        c3, c2, c3/2,
-                        self.pipeline.rho, self.acoustic_lens.rho2
-                    )
-                    amplitudes["transmission_loss"][j, :, i] *= Tpp_12 * Tpp_23
+                    # Tpp_12, _ = solid2liquid_t_coeff(
+                    #     solution[j]['interface_12'][0][i], solution[j]['interface_12'][1][i],
+                    #     c1, c2, c1/2,
+                    #     self.acoustic_lens.rho1, self.acoustic_lens.rho2
+                    # )
+                    # Tpp_23, _ = liquid2solid_t_coeff(
+                    #     solution[j]['interface_23'][1][i], solution[j]['interface_23'][0][i],
+                    #     c3, c2, c3/2,
+                    #     self.pipeline.rho, self.acoustic_lens.rho2
+                    # )
+                    # amplitudes["transmission_loss"][j, :, i] *= Tpp_12 * Tpp_23
+                    pass
 
             if self.directivity:
                 theta = solution[j]['firing_angle'][i]
@@ -136,6 +170,31 @@ class FocusRayTracer(RayTracerSolver):
 
             alpha_impedance = findIntersectionBetweenImpedanceMatchingAndRay(a_l, b_l, self.acoustic_lens)
             x_impedance_intersection, z_impedance_intersection = self.acoustic_lens.xy_from_alpha(alpha_impedance, thickness=impedance_thickness)
+
+            ###########################
+            # SIMULANDO SEM REFLEXÕES #
+            ###########################
+
+            # Refraction: Impedance -> Water
+            gamma2_no_refl, inc_imp_2_no_refl, ref_imp_2_no_refl = snell(c_impedance, c2, gamma_imp, self.acoustic_lens.dydx_from_alpha(alpha_impedance, thickness=impedance_thickness))
+            a_line_no_refl = np.tan(uhp(gamma2_no_refl))
+            b_line_no_refl = z_impedance_intersection - a_line_no_refl * x_impedance_intersection
+
+            a_no_refl = a_line_no_refl**2 + 1
+            b_no_refl = 2 * a_line_no_refl * b_line_no_refl - 2 * (self.pipeline.xcenter + a_line_no_refl * self.pipeline.zcenter)
+            c_no_refl = b_line_no_refl ** 2 + self.pipeline.xcenter ** 2 + self.pipeline.zcenter ** 2 - 2 * self.pipeline.zcenter * b_line_no_refl - self.pipeline.outer_radius ** 2
+
+            xcirc1_no_refl, xcirc2_no_refl = roots_bhaskara(a_no_refl, b_no_refl, c_no_refl)
+            ycirc1_no_refl, ycirc2_no_refl = a_line_no_refl * xcirc1_no_refl + b_line_no_refl, a_line_no_refl * xcirc2_no_refl + b_line_no_refl
+            upper_no_refl = ycirc1_no_refl > ycirc2_no_refl
+            xcirc_no_refl = xcirc1_no_refl * upper_no_refl + xcirc2_no_refl * (1 - upper_no_refl)
+            # ycirc_no_refl = ycirc1_no_refl * upper_no_refl + ycirc2_no_refl * (1 - upper_no_refl)
+
+            _, inc23_no_refl, ref23_no_refl = snell(c2, c3, gamma2_no_refl, self.pipeline.dydx(xcirc_no_refl))
+
+            ###########################
+            ###########################
+            ###########################
 
             # Reflection: Impedance -> Lens
             gamma_imp_refl_1, _, inc_imp_1, ref_imp_1 = reflection(gamma_imp, self.acoustic_lens.dydx_from_alpha(alpha_impedance, thickness=impedance_thickness))
@@ -198,7 +257,9 @@ class FocusRayTracer(RayTracerSolver):
                 'interface_imp_1': [inc_imp_1, ref_imp_1],
                 'interface_1_imp_refl': [inc_1_imp_refl, ref_1_imp_refl],
                 'interface_imp_2': [inc_imp_2, ref_imp_2],
-                'interface_23': [inc23, ref23]
+                'interface_23': [inc23, ref23],
+                'interface_imp_2_no_refl': [inc_imp_2_no_refl, ref_imp_2_no_refl],
+                'interface_23_no_refl': [inc23_no_refl, ref23_no_refl],
             }
         else:
             return {
