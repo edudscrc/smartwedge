@@ -35,6 +35,8 @@ class FocusRayTracer(RayTracerSolver):
 
         amplitudes = {
             "transmission_loss": np.ones((n_elem, n_elem, n_focii), dtype=FLOAT),
+            "transmission_loss_with_refl": np.ones((n_elem, n_elem, n_focii), dtype=FLOAT),
+            "transmission_loss_without_refl": np.ones((n_elem, n_elem, n_focii), dtype=FLOAT),
             "directivity": np.ones((n_elem, n_elem, n_focii), dtype=FLOAT)
         }
 
@@ -107,21 +109,23 @@ class FocusRayTracer(RayTracerSolver):
                     )
 
                     transmission_with_refl = Tpp_1_imp * Tpp_imp_1 * Tpp_1_imp_refl * Tpp_imp_2 * Tpp_23
+                    amplitudes["transmission_loss_with_refl"][j, :, i] = transmission_with_refl
                     transmission_without_refl = Tpp_1_imp * T_imp2water * T_water2pipe
+                    amplitudes["transmission_loss_without_refl"][j, :, i] = transmission_without_refl
 
                     amplitudes["transmission_loss"][j, :, i] = transmission_with_refl + transmission_without_refl
                 else:
-                    # Tpp_12, _ = solid2liquid_t_coeff(
-                    #     solution[j]['interface_12'][0][i], solution[j]['interface_12'][1][i],
-                    #     c1, c2, c1/2,
-                    #     self.acoustic_lens.rho1, self.acoustic_lens.rho2
-                    # )
-                    # Tpp_23, _ = liquid2solid_t_coeff(
-                    #     solution[j]['interface_23'][1][i], solution[j]['interface_23'][0][i],
-                    #     c3, c2, c3/2,
-                    #     self.pipeline.rho, self.acoustic_lens.rho2
-                    # )
-                    # amplitudes["transmission_loss"][j, :, i] *= Tpp_12 * Tpp_23
+                    Tpp_12, _ = solid2fluid_t_coeff(
+                        solution[j]['interface_12'][0][i], solution[j]['interface_12'][1][i],
+                        c1, c1/2, c2,
+                        self.acoustic_lens.rho1, self.acoustic_lens.rho2
+                    )
+                    Tpp_23, _ = fluid2solid_t_coeff(
+                        solution[j]['interface_23'][0][i], solution[j]['interface_23'][1][i],
+                        c2, c3, c3/2,
+                        self.acoustic_lens.rho2, self.pipeline.rho
+                    )
+                    amplitudes["transmission_loss"][j, :, i] *= Tpp_12 * Tpp_23
                     pass
 
             if self.directivity:
