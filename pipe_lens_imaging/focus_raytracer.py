@@ -113,7 +113,11 @@ class FocusRayTracer(RayTracerSolver):
                     transmission_without_refl = Tpp_1_imp * T_imp2water * T_water2pipe
                     amplitudes["transmission_loss_without_refl"][j, :, i] = transmission_without_refl
 
+                    amplitudes["transmission_loss_with_refl"][j, :, i] = 1 - amplitudes["transmission_loss_with_refl"][j, :, i]
+                    amplitudes["transmission_loss_without_refl"][j, :, i] = 1 - amplitudes["transmission_loss_without_refl"][j, :, i]
+
                     amplitudes["transmission_loss"][j, :, i] = transmission_with_refl + transmission_without_refl
+                    amplitudes["transmission_loss"][j, :, i] = 1 - amplitudes["transmission_loss"][j, :, i]
                 else:
                     Tpp_12, _ = solid2fluid_t_coeff(
                         solution[j]['interface_12'][0][i], solution[j]['interface_12'][1][i],
@@ -126,7 +130,7 @@ class FocusRayTracer(RayTracerSolver):
                         self.acoustic_lens.rho2, self.pipeline.rho
                     )
                     amplitudes["transmission_loss"][j, :, i] *= Tpp_12 * Tpp_23
-                    pass
+                    amplitudes["transmission_loss"][j, :, i] = 1 - amplitudes["transmission_loss"][j, :, i]
 
             if self.directivity:
                 theta = solution[j]['firing_angle'][i]
@@ -153,6 +157,7 @@ class FocusRayTracer(RayTracerSolver):
             tofs = d1 / c1 + d2 / c_impedance + d3 / c_impedance + d4 / c_impedance + d5 / c2 + d6 / c3
         else:
             tofs = d1 / c1 + d2 / c2 + d3 / c3
+
         return tofs, amplitudes
 
     def _dist_kernel(self, xc: float, zc: float, xf: ndarray, yf: ndarray, acurve: float):
