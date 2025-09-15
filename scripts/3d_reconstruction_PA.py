@@ -15,7 +15,7 @@ from pipe_lens_imaging.utils import pointlist_to_cloud as pl2pc
 from pipe_lens_imaging.utils import pcd_to_mesh as p2m
 
 # === Matplotlib Configuration ===
-matplotlib.use('TkAgg')
+
 plt.rcParams.update({
     "text.usetex": True,
     "font.family": "serif",

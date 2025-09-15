@@ -16,9 +16,6 @@ class FocusRayTracer(RayTracerSolver):
         n_elem = self.transducer.num_elem
         n_focii = len(solution[0]['xlens'])
 
-        print(f'{n_elem = }')
-        print(f'{n_focii = }')
-
         c1, c2, c3 = self.get_speeds()
 
         if self.acoustic_lens.impedance_matching is not None:

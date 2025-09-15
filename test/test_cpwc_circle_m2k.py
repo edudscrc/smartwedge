@@ -5,7 +5,7 @@ from framework import file_m2k
 import matplotlib.pyplot as plt
 
 
-matplotlib.use('TkAgg')
+
 from pipe_lens_imaging.pwi_tfm import cpwc_circle_kernel
 from archive.cpwc.pw_circ import f_circ
 import time

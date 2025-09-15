@@ -21,7 +21,7 @@ from pipe_lens_imaging.pwi_tfm import (
 )
 
 # --- Configuration and Setup ---
-matplotlib.use('TkAgg')
+
 
 # LaTeX linewidth for consistent plotting with LaTeX documents
 linewidth = 6.3091141732

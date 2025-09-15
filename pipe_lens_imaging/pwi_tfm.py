@@ -286,7 +286,7 @@ def is_inside_pwr(thetas, xroi, zroi, xt, zt, xe, ze, xcenter, zcenter, radius, 
             #
             #     import matplotlib
             #     import matplotlib.pyplot as plt
-            #     matplotlib.use('TkAgg')
+            #     
             #     xspan = np.arange(-radius, radius + .1e-3, .1e-3)
             #     xmin, xmax = np.min(xroi) * 1e3, np.max(xroi) * 1e3
             #     zmin, zmax = np.min(zroi) * 1e3, np.max(zroi) * 1e3

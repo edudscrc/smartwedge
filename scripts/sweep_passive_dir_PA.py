@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from pipe_lens_imaging.utils import api
 
 
-matplotlib.use('TkAgg')
+
 from pipe_lens_imaging.pwi_tfm import *
 from matplotlib.ticker import FuncFormatter
 from parameter_estimation.intsurf_estimation import profile_fadmm
@@ -36,7 +36,7 @@ import scipy
 from tqdm import tqdm
 
 linewidth = 6.3091141732 # LaTeX linewidth
-matplotlib.use('TkAgg')
+
 plt.rcParams.update({
     "text.usetex": True,
     "font.family": "serif",

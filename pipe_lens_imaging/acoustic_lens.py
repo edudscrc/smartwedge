@@ -15,16 +15,16 @@ def roots_bhaskara(a, b, c):
 
 
 class ImpedanceMatching:
-    def __init__(self, p_wave_speed, density=0.92e3, central_frequency=5.0e6):
+    def __init__(self, p_wave_speed, density=0.92e3, central_frequency=5.0e6, impedance_matching_thickness=1/4):
         self.p_wave_speed = p_wave_speed
         self.central_frequency = central_frequency
         self.rho = density
         self.wave_length = (self.p_wave_speed) / (self.central_frequency)
-        self.thickness = 1 / 4 * self.wave_length
+        self.thickness = impedance_matching_thickness * self.wave_length
 
 
 class AcousticLens:
-    def __init__(self, c1: float, c2: float, d: float, alpha_max: float, alpha_0: float, h0: float, rho1: float, rho2: float, impedance_matching: bool=False):
+    def __init__(self, c1: float, c2: float, d: float, alpha_max: float, alpha_0: float, h0: float, rho1: float, rho2: float, impedance_matching: bool=False, impedance_matching_thickness: float=1/4):
         """
         :param c1: Speed of sound (acoustic lens) in (m/s)
         :param c2: Speed of sound (coupling medium) in (m/s)
@@ -56,7 +56,7 @@ class AcousticLens:
         self.xlens, self.zlens = self.xy_from_alpha(linspace(-self.alpha_max, self.alpha_max, 1000))
 
         if impedance_matching:
-            self.impedance_matching = ImpedanceMatching(p_wave_speed=2.9e3, density=1.7)
+            self.impedance_matching = ImpedanceMatching(p_wave_speed=2.9e3, density=1.7, impedance_matching_thickness=impedance_matching_thickness)
             self.x_imp, self.z_imp = self.xy_from_alpha(linspace(-self.alpha_max, self.alpha_max, 1000), 
                                                         thickness=self.impedance_matching.thickness)
         else:

@@ -17,7 +17,7 @@ from pipe_lens.imaging_utils import convert_time2radius
 from pipe_lens_imaging.specimen import get_specimen
 
 # === Matplotlib Configuration ===
-matplotlib.use('TkAgg')
+
 plt.rcParams.update({
     "text.usetex": True,
     "font.family": "serif",

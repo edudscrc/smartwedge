@@ -3,7 +3,7 @@ import matplotlib
 from framework.post_proc import envelope
 from framework import file_civa
 import matplotlib.pyplot as plt
-matplotlib.use('TkAgg')
+
 from pipe_lens_imaging.pwi_tfm_contact import cpwc_contact_kernel
 import time
 

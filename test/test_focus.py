@@ -21,10 +21,9 @@ def rotate_point(xy, theta_rad):
     return (x_rot, y_rot)
 
 
-matplotlib.use('TkAgg')
+
 plt.rcParams.update({
     "text.usetex": False,
-    "font.family": "Monaspace Neon",
     "font.size": 10,
     "font.weight": "normal",
 })
@@ -52,10 +51,10 @@ pipeline = Pipeline(radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 pipeline_no_matching = Pipeline(radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 
 # Ultrasound phased array transducer specs:
-transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
+transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=1, fc=5e6)
 transducer.zt += acoustic_lens.d
 
-transducer_no_matching = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
+transducer_no_matching = Transducer(pitch=.5e-3, bw=.4, num_elem=1, fc=5e6)
 transducer_no_matching.zt += acoustic_lens_no_matching.d
 
 # Raytracer engine to find time of flight between emitter and focus:
@@ -63,7 +62,7 @@ raytracer = FocusRayTracer(acoustic_lens, pipeline, transducer, transmission_los
 raytracer_no_matching = FocusRayTracer(acoustic_lens_no_matching, pipeline, transducer_no_matching, transmission_loss=True, directivity=True)
 
 arg = (
-    3e-3,
+    1e-3,
     inner_radius + 10e-3,
 )
 arg = rotate_point(arg, theta_rad=0)

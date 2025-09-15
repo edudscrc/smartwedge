@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 linewidth = 6.3091141732 # LaTeX linewidth
 
-matplotlib.use('TkAgg')
+
 plt.rcParams.update({
     "text.usetex": True,
     "font.family": "serif",
