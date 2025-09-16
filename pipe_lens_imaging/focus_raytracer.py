@@ -194,7 +194,7 @@ class FocusRayTracer(RayTracerSolver):
             ycirc1_no_refl, ycirc2_no_refl = a_line_no_refl * xcirc1_no_refl + b_line_no_refl, a_line_no_refl * xcirc2_no_refl + b_line_no_refl
             upper_no_refl = ycirc1_no_refl > ycirc2_no_refl
             xcirc_no_refl = xcirc1_no_refl * upper_no_refl + xcirc2_no_refl * (1 - upper_no_refl)
-            # ycirc_no_refl = ycirc1_no_refl * upper_no_refl + ycirc2_no_refl * (1 - upper_no_refl)
+            ycirc_no_refl = ycirc1_no_refl * upper_no_refl + ycirc2_no_refl * (1 - upper_no_refl)
 
             _, inc23_no_refl, ref23_no_refl = snell(c2, c3, gamma2_no_refl, self.pipeline.dydx(xcirc_no_refl))
 
@@ -258,6 +258,7 @@ class FocusRayTracer(RayTracerSolver):
                 'xlens_2': x_lens_intersection, 'zlens_2': z_lens_intersection,
                 'ximp_2': x_impedance_intersection_2, 'zimp_2': z_impedance_intersection_2,
                 'xpipe': xcirc, 'zpipe': ycirc,
+                'xpipe_no_refl': xcirc_no_refl, 'ypipe_no_refl': ycirc_no_refl,
                 'dist': dist, 'xf': xf, 'zf': yf,
                 'interface_1_imp': [inc_1_imp, ref_1_imp],
                 'interface_imp_1': [inc_imp_1, ref_imp_1],

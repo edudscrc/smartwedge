@@ -20,6 +20,7 @@ class ImpedanceMatching:
         self.central_frequency = central_frequency
         self.rho = density
         self.wave_length = (self.p_wave_speed) / (self.central_frequency)
+        print(self.wave_length)
         self.thickness = impedance_matching_thickness * self.wave_length
 
 

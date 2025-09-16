@@ -51,7 +51,7 @@ pipeline = Pipeline(radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 pipeline_no_matching = Pipeline(radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 
 # Ultrasound phased array transducer specs:
-transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=1, fc=5e6)
+transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
 transducer.zt += acoustic_lens.d
 
 transducer_no_matching = Transducer(pitch=.5e-3, bw=.4, num_elem=1, fc=5e6)
@@ -85,6 +85,8 @@ ximp, zimp = extract_pts(sol, 'ximp'), extract_pts(sol, 'zimp')
 xlens_2, zlens_2 = extract_pts(sol, 'xlens_2'), extract_pts(sol, 'zlens_2')
 ximp_2, zimp_2 = extract_pts(sol, 'ximp_2'), extract_pts(sol, 'zimp_2')
 xpipe, zpipe = extract_pts(sol, 'xpipe'), extract_pts(sol, 'zpipe')
+
+xpipe_no_refl, ypipe_no_refl = extract_pts(sol, 'xpipe_no_refl'), extract_pts(sol, 'ypipe_no_refl')
 
 xlens_no_matching, zlens_no_matching = extract_pts(sol_no_matching, 'xlens'), extract_pts(sol_no_matching, 'zlens')
 xpipe_no_matching, zpipe_no_matching = extract_pts(sol_no_matching, 'xpipe'), extract_pts(sol_no_matching, 'zpipe')
@@ -122,18 +124,18 @@ plt.ylabel("y-axis / (mm)")
 for iter, n in enumerate(range(transducer.num_elem)):
     if iter == 0:
         plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
-        plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5, label="Lens -> Imp. (1)")
-        plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5, label="Imp. -> Lens")
-        plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5, label="Lens -> Imp. (2)")
-        plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
-        plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
+        plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
+        plt.plot([ximp[n], xpipe_no_refl[n]], [zimp[n], ypipe_no_refl[n]], "C2", linewidth=.5, label="Imp. -> Pipe")
+        # plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5, label="Lens -> Imp. (2)")
+        # plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
+        plt.plot([xpipe_no_refl[n], xf], [ypipe_no_refl[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
     else:
         plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5)
         plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5)
-        plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5)
-        plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5)
-        plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5)
-        plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5)
+        plt.plot([ximp[n], xpipe_no_refl[n]], [zimp[n], ypipe_no_refl[n]], "C2", linewidth=.5)
+        # plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5)
+        # plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5)
+        plt.plot([xpipe_no_refl[n], xf], [ypipe_no_refl[n], zf], "C5", linewidth=.5)
 plt.plot(xf, zf, 'xr', label='Focus')
 plt.legend()
 plt.ylim(-5e-3, acoustic_lens.d + 5e-3)
