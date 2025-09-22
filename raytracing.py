@@ -1,17 +1,14 @@
 import numpy as np
 from numpy import ndarray
 from numpy.linalg import norm
-
-from pipe_lens_imaging.raytracer_utils import roots_bhaskara, snell, uhp, reflection, refraction
-from pipe_lens_imaging.geometric_utils import findIntersectionBetweenImpedanceMatchingAndRay, findIntersectionBetweenAcousticLensAndRay
-from pipe_lens_imaging.ultrasound import far_field_directivity_solid, fluid2solid_t_coeff, fluid2solid_r_coeff, solid2fluid_t_coeff, solid2solid_t_coeff, solid2solid_r_coeff
-from pipe_lens_imaging.raytracer_solver import RayTracerSolver
-
-__all__ = ['FocusRayTracer']
+from raytracing_utils import roots_bhaskara, snell, uhp, reflection
+from geometric_utils import findIntersectionBetweenImpedanceMatchingAndRay, findIntersectionBetweenAcousticLensAndRay
+from ultrasound import far_field_directivity_solid, fluid2solid_t_coeff, fluid2solid_r_coeff, solid2fluid_t_coeff, solid2solid_tr_coeff
+from raytracing_solver import RayTracingSolver
 
 FLOAT = np.float32
 
-class FocusRayTracer(RayTracerSolver):
+class RayTracing(RayTracingSolver):
     def get_tofs(self, solution):
         n_elem = self.transducer.num_elem
         n_focii = len(solution[0]['xlens'])
@@ -51,7 +48,7 @@ class FocusRayTracer(RayTracerSolver):
             if self.transmission_loss:
                 if self.acoustic_lens.impedance_matching is not None:
                     # Transmissão - Alumínio -> Camada de Casamento
-                    Tpp_1_imp = solid2solid_t_coeff(
+                    Tpp_1_imp, _ = solid2solid_tr_coeff(
                         solution[j]['interface_1_imp'][0][i], solution[j]['interface_1_imp'][1][i],
                         c1, c_impedance, c1/2, c_impedance/2,
                         self.acoustic_lens.rho1, self.acoustic_lens.impedance_matching.rho
@@ -69,14 +66,14 @@ class FocusRayTracer(RayTracerSolver):
                     )
 
                     # Reflexão - Interface: Camada de Casamento - Alumínio
-                    Tpp_1_imp_refl, _ = solid2solid_r_coeff(
+                    _, Tpp_1_imp_refl = solid2solid_tr_coeff(
                         solution[j]['interface_1_imp_refl'][0][i], solution[j]['interface_1_imp_refl'][1][i],
                         c_impedance, c1, c_impedance/2, c1/2,
                         self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
                     )
 
                     # Transmissão - Camada de Casamento -> Água
-                    Tpp_imp_2, _ = solid2fluid_t_coeff(
+                    Tpp_imp_2 = solid2fluid_t_coeff(
                         solution[j]['interface_imp_2'][0][i], solution[j]['interface_imp_2'][1][i],
                         c_impedance, c_impedance/2, c2,
                         self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
@@ -93,7 +90,7 @@ class FocusRayTracer(RayTracerSolver):
                     # Sem considerar reflexões #
                     ############################
 
-                    T_imp2water, _ = solid2fluid_t_coeff(
+                    T_imp2water = solid2fluid_t_coeff(
                         solution[j]['interface_imp_2_no_refl'][0][i], solution[j]['interface_imp_2_no_refl'][1][i],
                         c_impedance, c_impedance/2, c2,
                         self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
@@ -116,7 +113,7 @@ class FocusRayTracer(RayTracerSolver):
                     amplitudes["transmission_loss"][j, :, i] = transmission_with_refl + transmission_without_refl
                     amplitudes["transmission_loss"][j, :, i] = amplitudes["transmission_loss"][j, :, i]
                 else:
-                    Tpp_12, _ = solid2fluid_t_coeff(
+                    Tpp_12 = solid2fluid_t_coeff(
                         solution[j]['interface_12'][0][i], solution[j]['interface_12'][1][i],
                         c1, c1/2, c2,
                         self.acoustic_lens.rho1, self.acoustic_lens.rho2

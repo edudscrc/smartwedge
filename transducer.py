@@ -1,18 +1,14 @@
 import numpy as np
-
 from scipy.signal import gausspulse
-from numpy import ndarray
-
-__all__ = ["Transducer"]
 
 class Transducer:
-    def __init__(self, pitch: float = .4e-3, num_elem: int = 64, element_gap:float = .1e-3, fc: float = 5e6, bw: float = .4, bwr: float = -6,
-                 pulse_type: str = "gaussian"):
+    def __init__(self, pitch: float=.4e-3, num_elem: int=64, element_gap:float=.1e-3, fc: float=5e6, bw: float=.4, bwr: float=-6,
+                 pulse_type: str="gaussian"):
         self.pitch = pitch
         self.num_elem = num_elem
         self.fc = fc
-        self.bw = bw  # Hz
-        self.bwr = bwr  # dB
+        self.bw = bw
+        self.bwr = bwr
         self.pulse_type = pulse_type
         self.xt = np.arange(0, self.num_elem) * pitch
         self.xt -= np.mean(self.xt)
@@ -27,8 +23,8 @@ class Transducer:
         else:
             return self.xt[i], self.zt[i]
 
-    def get_signal(self, tspan: ndarray, delta_t: float = 0):
-        if self.pulse_type == "gaussian":
-            return gausspulse(tspan - delta_t, fc=self.fc, bw=self.bw, bwr=self.bwr)
-        else:
-            raise NotImplementedError
+    # def get_signal(self, tspan: np.ndarray, delta_t: float = 0):
+    #     if self.pulse_type == "gaussian":
+    #         return gausspulse(tspan - delta_t, fc=self.fc, bw=self.bw, bwr=self.bwr)
+    #     else:
+    #         raise NotImplementedError

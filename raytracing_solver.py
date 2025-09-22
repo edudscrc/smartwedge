@@ -1,33 +1,27 @@
 import numpy as np
-from numpy import ndarray, pi
 from abc import ABC, abstractmethod
 from bisect import bisect
 from scipy.optimize import minimize_scalar
-
-from pipe_lens_imaging.raytracer_utils import uhp, roots_bhaskara, snell
-from pipe_lens_imaging.acoustic_lens import AcousticLens
-from pipe_lens_imaging.pipeline import Pipeline
-from pipe_lens_imaging.transducer import Transducer
-from pipe_lens_imaging.ultrasound import *
-
-__all__ = ["RayTracerSolver"]
+from acoustic_lens import AcousticLens
+from transducer import Transducer
+from pipeline import Pipeline
+from ultrasound import *
 
 FLOAT = np.float32
 
 
-class RayTracerSolver(ABC):
-    def __init__(self, acoustic_lens: AcousticLens, pipeline: Pipeline, transducer: Transducer, transmission_loss: bool= False, reflection_loss: bool = False, directivity: bool= False):
+class RayTracingSolver(ABC):
+    def __init__(self, acoustic_lens: AcousticLens, pipeline: Pipeline, transducer: Transducer, transmission_loss: bool= False, directivity: bool= False):
         self.transducer = transducer
         self.pipeline = pipeline
         self.acoustic_lens = acoustic_lens
 
         self.transmission_loss = transmission_loss
-        self.reflection_loss = reflection_loss
         self.directivity = directivity
 
         self.c1 = self.c2 = self.c3 = None
 
-    def _solve(self, xf, zf, maxiter: int = 6, solver: str='newton'):
+    def _solve(self, xf, zf, maxiter, solver: str='newton'):
         if isinstance(xf, (int, float)) and isinstance(zf, (int, float)):
             xf, zf = np.array([xf]), np.array([zf])
 
@@ -35,7 +29,7 @@ class RayTracerSolver(ABC):
         if solver == 'newton':
             solution = self._newton_batch(xf, zf, maxiter)
         elif solver == 'grid-search':
-            solution = self._grid_search_batch(xf, zf, maxiter)
+            solution = self._grid_search_batch(xf, zf)
         elif solver == 'scipy-bounded':
             solution = self._scipy_bounded_batch(xf, zf, maxiter)
         else:
@@ -43,26 +37,21 @@ class RayTracerSolver(ABC):
 
         return solution
 
-    def set_speeds(self, c1, c2, c3):
-        self.c1 = c1
-        self.c2 = c2
-        self.c3 = c3
-
     def get_speeds(self):
         c1 = self.acoustic_lens.c1 if self.c1 is None else self.c1  # Wedge material
         c2 = self.acoustic_lens.c2 if self.c2 is None else self.c2  # Coupling medium
         c3 = self.pipeline.c if self.c3 is None else self.c3  # Pipeline material
         return c1, c2, c3
 
-    def solve(self, xf, zf, maxiter: int = 6, solver='newton'):
+    def solve(self, xf, zf, maxiter, solver='newton'):
         # Find focii TOF:
         solution = self._solve(xf, zf, maxiter, solver)
 
         tofs, amplitudes = self.get_tofs(solution)
 
-        return tofs, amplitudes
+        return tofs, amplitudes, solution
 
-    def _newton_batch(self, xf: ndarray, yf: ndarray, iter: int, verbose=False) -> list:
+    def _newton_batch(self, xf: np.ndarray, yf: np.ndarray, iter: int, verbose=False) -> list:
         '''Calls the function newton() one time for each transducer element.
       The set of angles found for a given element are used as initial guess for
       the next one. Starts from the center of the transducer.'''
@@ -96,7 +85,7 @@ class RayTracerSolver(ABC):
                     print('Bad indices found at ' + str(i_m) + ': ' + str(np.count_nonzero(bad_indices)))
         return results
 
-    def _grid_search_batch(self, xf: ndarray, yf: ndarray, alpha_step=1e-3, dist_tol=.1e3, delta_alpha=30e-3, verbose=False) -> list:
+    def _grid_search_batch(self, xf: np.ndarray, yf: np.ndarray, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3) -> list:
         '''Calls the function newton() one time for each transducer element.
       The set of angles found for a given element are used as initial guess for
       the next one. Starts from the center of the transducer.'''
@@ -108,10 +97,10 @@ class RayTracerSolver(ABC):
 
         for i in range(N_elem):
             results[i] = self._grid_search(xc[i], yc[i], xf, yf, alpha_step, dist_tol, delta_alpha)
-            print('i = ', i)
+            print(f'{i = }')
         return results
 
-    def _grid_search(self, xc: float, yc: float, xf: ndarray, yf: ndarray, alpha_step: float, tol: float, delta_alpha: float) -> dict:
+    def _grid_search(self, xc: float, yc: float, xf: np.ndarray, yf: np.ndarray, alpha_step: float, tol: float, delta_alpha: float) -> dict:
         alpha_grid_coarse = np.arange(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max + alpha_step, alpha_step)
         alpha_grid_fine = np.arange(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max + alpha_step/10, alpha_step/10)
         alphaa = np.zeros_like(xf)
@@ -151,7 +140,7 @@ class RayTracerSolver(ABC):
 
         return final_results
 
-    def _newton(self, xc: float, yc: float, xf: ndarray, yf: ndarray, alpha_init=None, iter: int = 10) -> dict:
+    def _newton(self, xc: float, yc: float, xf: np.ndarray, yf: np.ndarray, alpha_init=None, iter: int = 10) -> dict:
         '''Uses the Newton-Raphson method to compute the direction in which
       the transducer at (xc, yc) should fire in order to hit the "pixel"
       at (xf, yf). A dictionary is returned with the following information:
@@ -183,13 +172,13 @@ class RayTracerSolver(ABC):
         dic['firing_angle'] = alphaa
         return dic
 
-    def _scipy_bounded_batch(self, xf: ndarray, yf: ndarray, iter: int=10, verbose=False):
+    def _scipy_bounded_batch(self, xf: np.ndarray, yf: np.ndarray, iter):
         N_elem = self.transducer.num_elem
         xc, yc = self.transducer.get_coords()
 
         results = [None] * N_elem
-        results[N_elem // 2] = self._scipy_bounded(xc[N_elem // 2], yc[N_elem // 2], xf, yf)
-        results[N_elem // 2 - 1] = self._scipy_bounded(xc[N_elem // 2 - 1], yc[N_elem // 2 - 1], xf, yf)
+        results[N_elem // 2] = self._scipy_bounded(xc[N_elem // 2], yc[N_elem // 2], xf, yf, iter=iter)
+        results[N_elem // 2 - 1] = self._scipy_bounded(xc[N_elem // 2 - 1], yc[N_elem // 2 - 1], xf, yf, iter=iter)
         for i in range(1, N_elem // 2):
             i_m = N_elem // 2 - i - 1
             i_p = N_elem // 2 + i
@@ -197,15 +186,14 @@ class RayTracerSolver(ABC):
             alpha_init = np.arctan(results[i_p - 1]['xlens'] / results[i_p - 1]['zlens'])
 
             # Compute the optimal path for a given transducer (xc,yc) focus (xf, yf) pair:
-            results[i_p] = self._scipy_bounded(xc[i_p], yc[i_p], xf, yf, alpha_init=alpha_init, iter=iter)
+            results[i_p] = self._scipy_bounded(xc[i_p], yc[i_p], xf, yf, iter=iter)
 
             alpha_init = np.arctan(results[i_m + 1]['xlens'] / results[i_m + 1]['zlens'])
-            results[i_m] = self._scipy_bounded(xc[i_m], yc[i_m], xf, yf, alpha_init=alpha_init, iter=iter)
+            results[i_m] = self._scipy_bounded(xc[i_m], yc[i_m], xf, yf, iter=iter)
 
         return results
 
-    def _scipy_bounded(self, xc: float, yc: float, xf: ndarray, yf: ndarray, alpha_init=None, iter: int = 10,
-                       tol: float = .5e-3) -> dict:
+    def _scipy_bounded(self, xc: float, yc: float, xf: np.ndarray, yf: np.ndarray, iter, tol: float=.5e-3) -> dict:
         N = len(xf)
         alphaa = np.zeros(N)
 
@@ -218,8 +206,10 @@ class RayTracerSolver(ABC):
                 cost_fun_i,
                 bounds=(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max),
                 method='bounded',
-                tol=tol,
-                options={"maxiter": iter}
+                options={
+                    "maxiter": iter,
+                    "xatol": tol
+                }
             )
 
             alphaa[jj] = res.x if res.fun <= tol else np.nan
@@ -235,7 +225,7 @@ class RayTracerSolver(ABC):
 
         return dic
 
-    def _dist_and_derivatives(self, xc: float, yc: float, xf: ndarray, yf: ndarray, acurve: ndarray, eps: float = 1e-5):
+    def _dist_and_derivatives(self, xc: float, yc: float, xf: np.ndarray, yf: np.ndarray, acurve: np.ndarray, eps: float = 1e-5):
         '''Computes the squared distance using distalpha as well as the first and
       second derivatives of the squared distance with relation to alpha.'''
         dm = self._dist_kernel(xc, yc, xf, yf, acurve - eps)['dist']
@@ -248,7 +238,7 @@ class RayTracerSolver(ABC):
 
     ##### Case-specific:
     @abstractmethod
-    def _dist_kernel(self, xc: float, zc: float, xf: ndarray, yf: ndarray, acurve: ndarray):
+    def _dist_kernel(self, xc: float, zc: float, xf: np.ndarray, yf: np.ndarray, acurve: np.ndarray):
         pass
 
     @abstractmethod

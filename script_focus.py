@@ -1,15 +1,12 @@
 import numpy as np
-import matplotlib
-from matplotlib import pyplot as plt
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-from pipe_lens_imaging.acoustic_lens import AcousticLens
-from pipe_lens_imaging.focus_raytracer import FocusRayTracer
-from pipe_lens_imaging.pipeline import Pipeline
-from pipe_lens_imaging.transducer import Transducer
+import matplotlib.pyplot as plt
+from acoustic_lens import AcousticLens
+from raytracing import RayTracing
+from pipeline import Pipeline
+from transducer import Transducer
 from numpy import pi
 import matplotlib.ticker as ticker
+from pathlib import Path
 
 
 def rotate_point(xy, theta_rad):
@@ -35,9 +32,9 @@ d = 170e-3 # in (m)
 alpha_max = pi/4 # in (rad)
 alpha_0 = 0  # in (rad)
 h0 = 91.03e-3 + 1e-3 # in (m)
-rho_aluminium = 2.710 #kg / m
-rho_water = 1.000
-rho_steel = 7.850
+rho_aluminium = 2.710e3 #kg / m
+rho_water = 1.000e3
+rho_steel = 7.850e3
 
 acoustic_lens = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_aluminium, rho_water, impedance_matching=True)
 acoustic_lens_no_matching = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_aluminium, rho_water, impedance_matching=False)
@@ -54,15 +51,15 @@ pipeline_no_matching = Pipeline(radius, wall_width, c3, rho_steel, xcenter=0, zc
 transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
 transducer.zt += acoustic_lens.d
 
-transducer_no_matching = Transducer(pitch=.5e-3, bw=.4, num_elem=1, fc=5e6)
+transducer_no_matching = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
 transducer_no_matching.zt += acoustic_lens_no_matching.d
 
 # Raytracer engine to find time of flight between emitter and focus:
-raytracer = FocusRayTracer(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
-raytracer_no_matching = FocusRayTracer(acoustic_lens_no_matching, pipeline, transducer_no_matching, transmission_loss=True, directivity=True)
+raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
+raytracer_no_matching = RayTracing(acoustic_lens_no_matching, pipeline, transducer_no_matching, transmission_loss=True, directivity=True)
 
 arg = (
-    1e-3,
+    5e-3,
     inner_radius + 10e-3,
 )
 arg = rotate_point(arg, theta_rad=0)

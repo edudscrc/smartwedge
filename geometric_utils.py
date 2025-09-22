@@ -1,42 +1,31 @@
-import numba
 import numpy as np
-from numpy import sin, cos, pi, arange, sqrt
-
-__all__ = [
-    "f_circ",
-    "rotate",
-    "dxdy_tube",
-    "circle_cartesian",
-    "pol2cart",
-    "line_equation_polar",
-    "findIntersectionBetweenAcousticLensAndRay",
-]
+import numba
 
 
 @numba.njit(fastmath=True)
 def f_circ(x, xc, zc, r):
-    return zc - sqrt(r**2 - (x - xc)**2)
+    return zc - np.sqrt(r**2 - (x - xc)**2)
 
 
 def rotate(x, y, angle, shift_x=0, shift_y=0):
-    newx = x * cos(angle) - y * sin(angle) + shift_x
-    newy = x * sin(angle) + y * cos(angle) + shift_y
+    newx = x * np.cos(angle) - y * np.sin(angle) + shift_x
+    newy = x * np.sin(angle) + y * np.cos(angle) + shift_y
     return newx, newy
 
 
 def dxdy_tube(x, r_circ):
-    return -x / sqrt(r_circ ** 2 - x ** 2)
+    return -x / np.sqrt(r_circ ** 2 - x ** 2)
 
 
 def circle_cartesian(r, xcenter=0.0, zcenter=0.0, angstep=1e-2):
-    alpha = arange(-pi, pi + angstep, angstep)
+    alpha = np.arange(-np.pi, np.pi + angstep, angstep)
     x, z = pol2cart(r, alpha)
     return x + xcenter, z + zcenter
 
 
 def pol2cart(rho, phi):
-    z = rho * cos(phi)
-    x = rho * sin(phi)
+    z = rho * np.cos(phi)
+    x = rho * np.sin(phi)
     return x, z
 
 

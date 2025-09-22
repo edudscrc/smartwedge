@@ -1,13 +1,9 @@
 import numpy as np
-import matplotlib
-from matplotlib import pyplot as plt
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-from pipe_lens_imaging.acoustic_lens import AcousticLens
-from pipe_lens_imaging.focus_raytracer import FocusRayTracer
-from pipe_lens_imaging.pipeline import Pipeline
-from pipe_lens_imaging.transducer import Transducer
+import matplotlib.pyplot as plt
+from acoustic_lens import AcousticLens
+from raytracing import RayTracing
+from pipeline import Pipeline
+from transducer import Transducer
 from numpy import pi
 from matplotlib import ticker
 
@@ -53,14 +49,14 @@ for impedance_thickness in thickness_arr:
     pipeline = Pipeline(radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 
     # Ultrasound phased array transducer specs:
-    transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=1, fc=5e6)
+    transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
     transducer.zt += acoustic_lens.d
 
     # Raytracer engine to find time of flight between emitter and focus:
-    raytracer = FocusRayTracer(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
+    raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
 
     arg = (
-        3e-3,
+        -6e-3,
         inner_radius + 10e-3,
     )
     arg = rotate_point(arg, theta_rad=0)
@@ -86,7 +82,7 @@ for impedance_thickness in thickness_arr:
 
     xf, zf = arg
 
-    if impedance_thickness == 1/16:
+    if impedance_thickness == 1/4:
         plt.figure()
         plt.title("Simulation with Impedance Matching")
         plt.plot(transducer.xt, transducer.zt, 'sk')
@@ -189,8 +185,8 @@ results = np.array(results)
 # max_amp = np.amax(results)
 plt.figure()
 plt.plot(thickness_arr, results, '-o', markersize=3)
-plt.axvline(1/4)
-plt.axvline(1 + 1/4)
+plt.axvline(1/4, color='red', label='1/4 de lambda')
+plt.axvline(1 + 1/4, color='orange', label='(1 + 1/4) de lambda')
 # plt.stem(thickness_arr, results)
 plt.title('Final Amplitude x Impedance Matching Thickness')
 plt.xlabel('Thickness')
