@@ -40,14 +40,16 @@ outer_radius = np.float32(139.82e-3 / 2)
 wall_width = np.float32(16.23e-3)
 pipeline = Pipeline(outer_radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 
-num_elements = 1
+num_elements = 64
 
 transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, fc=5e6)
 transducer.zt += acoustic_lens.d
 
 raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
 
-arg = (0, pipeline.inner_radius + 10e-3)
+focus_horizontal_offset = 4e-3
+
+arg = (focus_horizontal_offset, pipeline.inner_radius + 10e-3)
 arg = rotate_point(arg, theta_rad=0)
 arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
 
@@ -57,7 +59,7 @@ transducer_no_matching = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, f
 transducer_no_matching.zt += acoustic_lens_no_matching.d
 raytracer_no_matching = RayTracing(acoustic_lens_no_matching, pipeline_no_matching, transducer_no_matching, transmission_loss=True, directivity=True)
 
-arg_no_matching = (0, pipeline_no_matching.inner_radius + 10e-3)
+arg_no_matching = (focus_horizontal_offset, pipeline_no_matching.inner_radius + 10e-3)
 arg_no_matching = rotate_point(arg_no_matching, theta_rad=0)
 arg_no_matching = (arg_no_matching[0] + pipeline_no_matching.xcenter, arg_no_matching[1] + pipeline_no_matching.zcenter)
 
