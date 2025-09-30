@@ -40,7 +40,7 @@ outer_radius = np.float32(139.82e-3 / 2)
 wall_width = np.float32(16.23e-3)
 pipeline = Pipeline(outer_radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 
-num_elements = 64
+num_elements = 12
 
 transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, fc=5e6)
 transducer.zt += acoustic_lens.d
