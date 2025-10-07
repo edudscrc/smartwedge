@@ -260,6 +260,7 @@ class RayTracing(RayTracingSolver):
         yin = a3 * xin + b3
         dist = (xin - xf)**2 + (yin - yf)**2
 
+        # Reflection: Focus -> Pipe
         dy = xin - self.pipeline.xcenter
         dx = -(yin - self.pipeline.zcenter)
         g, _, inc, ref = reflection(gamma3, dy / dx)
@@ -275,6 +276,19 @@ class RayTracing(RayTracingSolver):
         new_upper = new_ycirc1 > new_ycirc2
         new_xcirc = new_xcirc1 * new_upper + new_xcirc2 * (1 - new_upper)
         new_ycirc = new_ycirc1 * new_upper + new_ycirc2 * (1 - new_upper)
+
+        # Refraction: Pipe -> Water
+        # alpha_impedance = findIntersectionBetweenImpedanceMatchingAndRay(a_l, b_l, self.acoustic_lens)
+        # x_impedance_intersection, z_impedance_intersection = self.acoustic_lens.xy_from_alpha(alpha_impedance, thickness=impedance_thickness)
+        
+        alpha2 = findIntersectionBetweenImpedanceMatchingAndRay(new_a, new_b, self.acoustic_lens)
+
+        g2, inc2, ref2 = snell(c3, c2, g, self.acoustic_lens.dydx_from_alpha(alpha2, thickness=impedance_thickness))
+        new_a2 = np.tan(uhp(g2))
+        new_b2 = new_ycirc - new_a2 * new_xcirc
+
+        alpha3 = findIntersectionBetweenImpedanceMatchingAndRay(new_a2, new_b2, self.acoustic_lens)
+        x_intersection_3, y_intersection_3 = self.acoustic_lens.xy_from_alpha(alpha3, thickness=impedance_thickness)
 
         if self.acoustic_lens.impedance_matching is not None:
             return {
@@ -293,6 +307,7 @@ class RayTracing(RayTracingSolver):
                 'interface_imp_2_no_refl': [inc_imp_2_no_refl, ref_imp_2_no_refl],
                 'interface_23_no_refl': [inc23_no_refl, ref23_no_refl],
                 'new_pipe_x': new_xcirc, 'new_pipe_y': new_ycirc,
+                'new_inter_3_x': x_intersection_3, 'new_inter_3_y': y_intersection_3,
             }
         else:
             return {

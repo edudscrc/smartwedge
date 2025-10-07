@@ -75,6 +75,7 @@ if has_impedance_matching:
     xlens_2, zlens_2 = extract_pts(sol, 'xlens_2'), extract_pts(sol, 'zlens_2')
     xpipe_no_refl, ypipe_no_refl = extract_pts(sol, 'xpipe_no_refl'), extract_pts(sol, 'ypipe_no_refl')
     new_xpipe, new_ypipe = extract_pts(sol, 'new_pipe_x'), extract_pts(sol, 'new_pipe_y')
+    new_inter_3_x, new_inter_3_y = extract_pts(sol, 'new_inter_3_x'), extract_pts(sol, 'new_inter_3_y')
 
 xf, zf = arg
 
@@ -104,6 +105,7 @@ for iter, n in enumerate(range(transducer.num_elem)):
             plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
             plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
             plt.plot([xf, new_xpipe[n]], [zf, new_ypipe[n]], "C6", linewidth=.5, label="Focus -> Pipe")
+            plt.plot([new_xpipe[n], new_inter_3_x[n]], [new_ypipe[n], new_inter_3_y[n]], "C7", linewidth=.5, label="Pipe -> Water (Imp.)")
         else:
             plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
             plt.plot([xlens[n], xpipe[n]], [zlens[n], zpipe[n]], "C1", linewidth=.5, label="Lens -> Pipe.")
@@ -117,6 +119,7 @@ for iter, n in enumerate(range(transducer.num_elem)):
             plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5)
             plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5)
             plt.plot([xf, new_xpipe[n]], [zf, new_ypipe[n]], "C6", linewidth=.5)
+            plt.plot([new_xpipe[n], new_inter_3_x[n]], [new_ypipe[n], new_inter_3_y[n]], "C7", linewidth=.5)
         else:
             plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5)
             plt.plot([xlens[n], xpipe[n]], [zlens[n], zpipe[n]], "C1", linewidth=.5)
