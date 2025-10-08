@@ -211,7 +211,6 @@ class RayTracing(RayTracingSolver):
 
             # Reflection: Impedance -> Lens
             gamma_imp_refl_1, _, inc_imp_1, ref_imp_1 = reflection(gamma_imp, self.acoustic_lens.dydx_from_alpha(alpha_impedance, thickness=impedance_thickness))
-            # gamma_imp_refl_1, inc_imp_1, ref_imp_1 = snell(c_impedance, c_impedance, gamma_imp, self.acoustic_lens.dydx_from_alpha(alpha_impedance, thickness=impedance_thickness))
             a_l_imp_1 = np.tan(uhp(gamma_imp_refl_1))
             b_l_imp_1 = z_impedance_intersection - a_l_imp_1 * x_impedance_intersection
 
@@ -220,7 +219,6 @@ class RayTracing(RayTracingSolver):
 
             # Reflection: Lens -> Impedance
             gamma_imp_refl_2, _, inc_1_imp_refl, ref_1_imp_refl = reflection(gamma_imp_refl_1, self.acoustic_lens.dydx_from_alpha(alpha_lens_refl))
-            # gamma_imp_refl_2, inc_1_imp_refl, ref_1_imp_refl = snell(c_impedance, c_impedance, gamma_imp_refl_1, self.acoustic_lens.dydx_from_alpha(alpha_lens_refl))
             a_l_imp_2 = np.tan(uhp(gamma_imp_refl_2))
             b_l_imp_2 = z_lens_intersection - a_l_imp_2 * x_lens_intersection
 
@@ -293,18 +291,6 @@ class RayTracing(RayTracingSolver):
 
         alpha4 = findIntersectionBetweenAcousticLensAndRay(new_a3, new_b3, self.acoustic_lens)
         x_intersection_4, y_intersection_4 = self.acoustic_lens.xy_from_alpha(alpha4)
-
-        # # Refraction (c2 -> c1)
-        # alpha_intersection = np.arctan2(intersection_x, intersection_z)
-        # d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
-        # phi_last, phi_intersection_incidence = refraction(phi_l, (d_z_intersection, d_x_intersection), c2, c1)
-
-        # # Line equation
-        # a_intersection = np.tan(phi_last)
-        # b_intersection = intersection_z - a_intersection * intersection_x
-
-        # x_in = (z_f - b_intersection) / a_intersection
-        # z_in = z_f.copy()
 
         alpha_intersection = np.arctan2(x_intersection_4, y_intersection_4)
 

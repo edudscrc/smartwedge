@@ -42,7 +42,7 @@ outer_radius = np.float32(139.82e-3 / 2)
 wall_width = np.float32(16.23e-3)
 pipeline = Pipeline(outer_radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 
-num_elements = 12
+num_elements = 64
 
 transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, fc=5e6)
 transducer.zt += acoustic_lens.d
@@ -100,32 +100,32 @@ plt.ylabel("y-axis / (mm)")
 for iter, n in enumerate(range(transducer.num_elem)):
     if iter == 0:
         if has_impedance_matching:
-            # plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
-            # plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
-            # plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5, label="Imp. -> Lens")
-            # plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5, label="Lens -> Imp. (2)")
-            # plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
-            # plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
-            # plt.plot([xf, new_xpipe[n]], [zf, new_ypipe[n]], "C6", linewidth=.5, label="Focus -> Pipe")
-            plt.plot([new_xpipe[n], new_inter_3_x[n]], [new_ypipe[n], new_inter_3_y[n]], "C1", linewidth=.5, label="Pipe -> Imp.")
-            plt.plot([new_inter_3_x[n], new_inter_4_x[n]], [new_inter_3_y[n], new_inter_4_y[n]], "C2", linewidth=.5, label="Imp. -> Lens (back)")
-            plt.plot([new_inter_4_x[n], last_x[n]], [new_inter_4_y[n], last_y[n]], "C3", linewidth=.5, label="Lens -> Transd.")
+            plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
+            plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
+            plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5, label="Imp. -> Lens")
+            plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5, label="Lens -> Imp. (2)")
+            plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
+            plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
+            plt.plot([xf, new_xpipe[n]], [zf, new_ypipe[n]], "C6", linewidth=.5, label="Focus -> Pipe")
+            plt.plot([new_xpipe[n], new_inter_3_x[n]], [new_ypipe[n], new_inter_3_y[n]], "C7", linewidth=.5, label="Pipe -> Imp.")
+            plt.plot([new_inter_3_x[n], new_inter_4_x[n]], [new_inter_3_y[n], new_inter_4_y[n]], "C8", linewidth=.5, label="Imp. -> Lens (back)")
+            plt.plot([new_inter_4_x[n], last_x[n]], [new_inter_4_y[n], last_y[n]], "C9", linewidth=.5, label="Lens -> Transd.")
         else:
             plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
             plt.plot([xlens[n], xpipe[n]], [zlens[n], zpipe[n]], "C1", linewidth=.5, label="Lens -> Pipe.")
             plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
     else:
         if has_impedance_matching:
-            # plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5)
-            # plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5)
-            # plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5)
-            # plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5)
-            # plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5)
-            # plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5)
-            # plt.plot([xf, new_xpipe[n]], [zf, new_ypipe[n]], "C6", linewidth=.5)
-            plt.plot([new_xpipe[n], new_inter_3_x[n]], [new_ypipe[n], new_inter_3_y[n]], "C1", linewidth=.5)
-            plt.plot([new_inter_3_x[n], new_inter_4_x[n]], [new_inter_3_y[n], new_inter_4_y[n]], "C2", linewidth=.5)
-            plt.plot([new_inter_4_x[n], last_x[n]], [new_inter_4_y[n], last_y[n]], "C3", linewidth=.5)
+            plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5)
+            plt.plot([xlens[n], ximp[n]], [zlens[n], zimp[n]], "C1", linewidth=.5)
+            plt.plot([ximp[n], xlens_2[n]], [zimp[n], zlens_2[n]], "C2", linewidth=.5)
+            plt.plot([xlens_2[n], ximp_2[n]], [zlens_2[n], zimp_2[n]], "C3", linewidth=.5)
+            plt.plot([ximp_2[n], xpipe[n]], [zimp_2[n], zpipe[n]], "C4", linewidth=.5)
+            plt.plot([xpipe[n], xf], [zpipe[n], zf], "C5", linewidth=.5)
+            plt.plot([xf, new_xpipe[n]], [zf, new_ypipe[n]], "C6", linewidth=.5)
+            plt.plot([new_xpipe[n], new_inter_3_x[n]], [new_ypipe[n], new_inter_3_y[n]], "C7", linewidth=.5)
+            plt.plot([new_inter_3_x[n], new_inter_4_x[n]], [new_inter_3_y[n], new_inter_4_y[n]], "C8", linewidth=.5)
+            plt.plot([new_inter_4_x[n], last_x[n]], [new_inter_4_y[n], last_y[n]], "C9", linewidth=.5)
         else:
             plt.plot([transducer.xt[n], xlens[n]], [transducer.zt[n], zlens[n]], "C0", linewidth=.5)
             plt.plot([xlens[n], xpipe[n]], [zlens[n], zpipe[n]], "C1", linewidth=.5)
