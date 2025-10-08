@@ -34,7 +34,7 @@ alpha_max = np.float32(np.pi / 4.0) # Maximum sectorial angle (rad)
 alpha_0 = np.float32(0.0)           # Reference angle (boundary condition) (rad)
 h0 = np.float32(91.03e-3 + 1e-3)    # Length h chosen at the reference angle (m)
 
-has_impedance_matching = False
+has_impedance_matching = True
 
 acoustic_lens = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_aluminium, rho_water, impedance_matching=has_impedance_matching)
 
@@ -62,7 +62,7 @@ arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
 # NR -> Ida normal + Volta refletida
 # RN -> Ida refletida + Volta normal
 # RR -> Ida refletida + Volta refletida
-mode = 'NN'
+mode = 'RN'
 
 tofs, amps, sol = raytracer.solve(*arg, mode=mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3)
 
@@ -83,8 +83,7 @@ if mode == 'NN':
 
     x_lens_2, z_lens_2 = extract_pts(sol, 'x_lens_2'), extract_pts(sol, 'z_lens_2')
     x_transd, z_transd = extract_pts(sol, 'x_transd'), extract_pts(sol, 'z_transd')
-
-if mode == 'RN':
+elif mode == 'RN':
     x_lens, z_lens = extract_pts(sol, 'x_lens'), extract_pts(sol, 'z_lens')
     x_imp, z_imp = extract_pts(sol, 'x_imp'), extract_pts(sol, 'z_imp')
     x_lens_refl_1, z_lens_refl_1 = extract_pts(sol, 'x_lens_refl_1'), extract_pts(sol, 'z_lens_refl_1')
@@ -99,7 +98,7 @@ xf, zf = arg
 
 if has_impedance_matching:
     plt.figure()
-    plt.title(f"Simulation - {mode}")
+    plt.title(f"Simulation with Impedance Matching - {mode}")
     plt.plot(transducer.xt, transducer.zt, 'sk')
     plt.plot(0, 0, 'or')
     plt.plot(0, acoustic_lens.d, 'or'   )
@@ -135,31 +134,31 @@ if has_impedance_matching:
                 plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C4", linewidth=.5)
                 plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C5", linewidth=.5)
                 plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C6", linewidth=.5)
-        # elif mode == 'RN':
-        #     if iter == 0:
-        #         plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
-        #         plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
-        #         plt.plot([x_imp[n], x_lens_refl_1[n]], [z_imp[n], z_lens_refl_1[n]], "C2", linewidth=.5, label="Imp. -> Lens")
-        #         plt.plot([x_lens_refl_1[n], x_imp_refl_2[n]], [z_lens_refl_1[n], z_imp_refl_2[n]], "C3", linewidth=.5, label="Lens -> Imp.")
-        #         plt.plot([x_imp_refl_2[n], x_pipe[n]], [z_imp_refl_2[n], z_pipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
-        #         plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
+        elif mode == 'RN':
+            if iter == 0:
+                plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
+                plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
+                plt.plot([x_imp[n], x_lens_refl_1[n]], [z_imp[n], z_lens_refl_1[n]], "C2", linewidth=.5, label="Imp. -> Lens")
+                plt.plot([x_lens_refl_1[n], x_imp_refl_2[n]], [z_lens_refl_1[n], z_imp_refl_2[n]], "C3", linewidth=.5, label="Lens -> Imp.")
+                plt.plot([x_imp_refl_2[n], x_pipe[n]], [z_imp_refl_2[n], z_pipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
+                plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
 
-        #         plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C6", linewidth=.5, label="Focus -> Pipe")
-        #         plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C7", linewidth=.5, label="Focus -> Pipe")
-        #         plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C8", linewidth=.5, label="Pipe -> Imp.")
-        #         plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C9", linewidth=.5, label="Imp. -> Lens")
-        #     else:
-        #         plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
-        #         plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5)
-        #         plt.plot([x_imp[n], x_lens_refl_1[n]], [z_imp[n], z_lens_refl_1[n]], "C2", linewidth=.5)
-        #         plt.plot([x_lens_refl_1[n], x_imp_refl_2[n]], [z_lens_refl_1[n], z_imp_refl_2[n]], "C3", linewidth=.5)
-        #         plt.plot([x_imp_refl_2[n], x_pipe[n]], [z_imp_refl_2[n], z_pipe[n]], "C4", linewidth=.5)
-        #         plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C5", linewidth=.5)
+                plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C6", linewidth=.5, label="Focus -> Pipe")
+                plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C7", linewidth=.5, label="Focus -> Pipe")
+                plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C8", linewidth=.5, label="Pipe -> Imp.")
+                plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C9", linewidth=.5, label="Imp. -> Lens")
+            else:
+                plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
+                plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5)
+                plt.plot([x_imp[n], x_lens_refl_1[n]], [z_imp[n], z_lens_refl_1[n]], "C2", linewidth=.5)
+                plt.plot([x_lens_refl_1[n], x_imp_refl_2[n]], [z_lens_refl_1[n], z_imp_refl_2[n]], "C3", linewidth=.5)
+                plt.plot([x_imp_refl_2[n], x_pipe[n]], [z_imp_refl_2[n], z_pipe[n]], "C4", linewidth=.5)
+                plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C5", linewidth=.5)
 
-        #         plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C6", linewidth=.5)
-        #         plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C7", linewidth=.5)
-        #         plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C8", linewidth=.5)
-        #         plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C9", linewidth=.5)
+                plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C6", linewidth=.5)
+                plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C7", linewidth=.5)
+                plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C8", linewidth=.5)
+                plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C9", linewidth=.5)
 
     plt.plot(xf, zf, 'xr', label='Focus')
     plt.legend()
@@ -167,7 +166,7 @@ if has_impedance_matching:
     plt.show()
 else:
     plt.figure()
-    plt.title(f"Simulation Without Impedance Matching - {mode}")
+    plt.title(f"Simulation without Impedance Matching - {mode}")
     plt.plot(transducer.xt, transducer.zt, 'sk')
     plt.plot(0, 0, 'or')
     plt.plot(0, acoustic_lens.d, 'or'   )
@@ -207,7 +206,7 @@ fmc_data = amps['transmission_loss'][:, 0, 0]
 
 plt.figure()
 plt.plot(np.arange(transducer.num_elem), fmc_data, '-o', markersize=3)
-plt.title(f"Transmission Loss - {mode}")
+plt.title(f"Transmission Loss - {mode} - with Impedance Matching" if has_impedance_matching else f"Transmission Loss - {mode} - without Impedance Matching")
 plt.xlabel("Transducer Element")
 plt.ylabel("Amplitude")
 plt.grid(True)

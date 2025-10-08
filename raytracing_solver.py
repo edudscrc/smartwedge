@@ -148,15 +148,6 @@ class RayTracingSolver(ABC):
 
         return final_results
 
-    ##### Case-specific:
-    @abstractmethod
-    def _dist_kernel(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):
-        pass
-
-    @abstractmethod
-    def get_tofs(self, solutions):
-        pass
-    
     @abstractmethod
     def _dist_kernel_NN(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):
         pass
