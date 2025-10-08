@@ -294,6 +294,27 @@ class RayTracing(RayTracingSolver):
         alpha4 = findIntersectionBetweenAcousticLensAndRay(new_a3, new_b3, self.acoustic_lens)
         x_intersection_4, y_intersection_4 = self.acoustic_lens.xy_from_alpha(alpha4)
 
+        # # Refraction (c2 -> c1)
+        # alpha_intersection = np.arctan2(intersection_x, intersection_z)
+        # d_z_intersection, d_x_intersection = dz_dx_from_alpha(alpha_intersection)
+        # phi_last, phi_intersection_incidence = refraction(phi_l, (d_z_intersection, d_x_intersection), c2, c1)
+
+        # # Line equation
+        # a_intersection = np.tan(phi_last)
+        # b_intersection = intersection_z - a_intersection * intersection_x
+
+        # x_in = (z_f - b_intersection) / a_intersection
+        # z_in = z_f.copy()
+
+        alpha_intersection = np.arctan2(x_intersection_4, y_intersection_4)
+
+        g4, inc4, ref4 = snell(c_impedance, c1, g3, self.acoustic_lens.dydx_from_alpha(alpha_intersection))
+        new_a4 = np.tan(uhp(g4))
+        new_b4 = y_intersection_4 - new_a4 * x_intersection_4
+
+        x_in_2 = (np.repeat(self.transducer.zt[0], len(new_b4)) - new_b4) / new_a4
+        z_in_2 = np.repeat(self.transducer.zt[0], len(new_b4))
+
         if self.acoustic_lens.impedance_matching is not None:
             return {
                 'xlens': xlens, 'zlens': ylens,
@@ -313,6 +334,7 @@ class RayTracing(RayTracingSolver):
                 'new_pipe_x': new_xcirc, 'new_pipe_y': new_ycirc,
                 'new_inter_3_x': x_intersection_3, 'new_inter_3_y': y_intersection_3,
                 'new_inter_4_x': x_intersection_4, 'new_inter_4_y': y_intersection_4,
+                'last_x': x_in_2, 'last_y': z_in_2,
             }
         else:
             return {
