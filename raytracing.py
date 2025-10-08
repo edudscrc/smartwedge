@@ -347,6 +347,10 @@ class RayTracing(RayTracingSolver):
         c_impedance = self.acoustic_lens.impedance_matching.p_wave_speed
         impedance_thickness = self.acoustic_lens.impedance_matching.thickness
 
+        #########
+        ## IDA ##
+        #########
+
         # Coords. in Lens (Transducer Interface -> Lens Interface)
         x_lens, z_lens = self.acoustic_lens.xy_from_alpha(acurve)
         gamma_1 = np.arctan2((z_lens - zc), (x_lens - xc))
@@ -387,15 +391,70 @@ class RayTracing(RayTracingSolver):
         # Distance between computed ray and focus
         dist = (x_found_focus - xf)**2 + (z_found_focus - zf)**2
 
+        ###########
+        ## VOLTA ##
+        ###########
+
+        # Focus -> Pipe Interface
+        dz_5 = xf - self.pipeline.xcenter
+        dx_5 = -(zf - self.pipeline.zcenter)
+        gamma_5, _, inc_5, ref_5 = reflection(gamma_4, dz_5 / dx_5)
+        a_5 = np.tan(uhp(gamma_5))
+        b_5 = zf - a_5 * xf
+        aux_a_5 = a_5**2 + 1
+        aux_b_5 = 2 * a_5 * b_5 - 2 * (self.pipeline.xcenter + a_5 * self.pipeline.zcenter)
+        aux_c_5 = b_5 ** 2 + self.pipeline.xcenter ** 2 + self.pipeline.zcenter ** 2 - 2 * self.pipeline.zcenter * b_5 - self.pipeline.outer_radius ** 2
+        x_pipe_1, x_pipe_2 = roots_bhaskara(aux_a_5, aux_b_5, aux_c_5)
+        z_pipe_1, z_pipe_2 = a_5 * x_pipe_1 + b_5, a_5 * x_pipe_2 + b_5
+        z_upper = z_pipe_1 > z_pipe_2
+        # Coords. in Pipe
+        x_pipe_2 = x_pipe_1 * z_upper + x_pipe_2 * (1 - z_upper)
+        z_pipe_2 = z_pipe_1 * z_upper + z_pipe_2 * (1 - z_upper)
+
+        # Pipe Interface -> Impedance Interface
+        aux_alpha = findIntersectionBetweenImpedanceMatchingAndRay(a_5, b_5, self.acoustic_lens)  # Gambiarra?
+        gamma_6, inc_6, ref_6 = snell(c3, c2, gamma_5, self.acoustic_lens.dydx_from_alpha(aux_alpha, thickness=impedance_thickness))
+        a_6 = np.tan(uhp(gamma_6))
+        b_6 = z_pipe_2 - a_6 * x_pipe_2
+        alpha_3 = findIntersectionBetweenImpedanceMatchingAndRay(a_6, b_6, self.acoustic_lens)
+        # Coords. in Impedance
+        x_imp_2, z_imp_2 = self.acoustic_lens.xy_from_alpha(alpha_3, thickness=impedance_thickness)
+
+        # Impedance Interface -> Lens Interface
+        gamma_7, inc_7, ref_7 = snell(c2, c_impedance, gamma_6, self.acoustic_lens.dydx_from_alpha(alpha_3, thickness=impedance_thickness))
+        a_7 = np.tan(uhp(gamma_7))
+        b_7 = z_imp_2 - a_7 * x_imp_2
+        alpha_4 = findIntersectionBetweenAcousticLensAndRay(a_7, b_7, self.acoustic_lens)
+        # Coords. in Lens
+        x_lens_2, z_lens_2 = self.acoustic_lens.xy_from_alpha(alpha_4)
+
+        # Lens Interface -> Transducer Interface
+        alpha_5 = np.arctan2(x_lens_2, z_lens_2)
+        gamma_8, inc_8, ref_8 = snell(c_impedance, c1, gamma_7, self.acoustic_lens.dydx_from_alpha(alpha_5))
+        a_8 = np.tan(uhp(gamma_8))
+        b_8 = z_lens_2 - a_8 * x_lens_2
+
+        x_transd = (np.repeat(self.transducer.zt[0], len(b_8)) - b_8) / a_8
+        z_transd = np.repeat(self.transducer.zt[0], len(b_8))
+
         return {
             'x_lens': x_lens, 'z_lens': z_lens,
             'x_imp': x_imp, 'z_imp': z_imp,
             'x_pipe': x_pipe, 'z_pipe': z_pipe,
             'xf': xf, 'zf': zf,
+            'x_pipe_2': x_pipe_2, 'z_pipe_2': z_pipe_2,
+            'x_imp_2': x_imp_2, 'z_imp_2': z_imp_2,
+            'x_lens_2': x_lens_2, 'z_lens_2': z_lens_2,
+            'x_transd': x_transd, 'z_transd': z_transd,
             'dist': dist,
             'interface_lens2imp': [inc_2, ref_2],
             'interface_imp2pipe': [inc_3, ref_3],
             'interface_pipe2focus': [inc_4, ref_4],
+
+            'interface_focus2pipe_R': [inc_5, ref_5],
+            'interface_pipe2imp': [inc_6, ref_6],
+            'interface_imp2lens': [inc_7, ref_7],
+            'interface_lens2transd': [inc_8, ref_8],
         }
 
     def get_tofs_NN(self, solution):
@@ -429,6 +488,11 @@ class RayTracing(RayTracingSolver):
             coords_pipe[j, 0, i], coords_pipe[j, 1, i] = solution[j]['x_pipe'][i], solution[j]['z_pipe'][i]
 
             if self.transmission_loss:
+
+                #########
+                ## IDA ##
+                #########
+
                 # 1. Transmission: Lens Inteface -> Impedance Interface
                 # Aluminum -> Impedance Matching : (Solid -> Solid)
                 Tpp_lens2imp, _ = solid2solid_tr_coeff(
@@ -453,7 +517,47 @@ class RayTracing(RayTracingSolver):
                     self.acoustic_lens.rho2, self.pipeline.rho
                 )
 
-                amplitudes["transmission_loss"][j, :, i] = Tpp_lens2imp * Tpp_imp2pipe * Tpp_pipe2focus
+                ###########
+                ## VOLTA ##
+                ###########
+
+                # 4. Reflection: Focus -> Pipe Interface
+                # Water -> Steel : (Fluid -> Solid)
+                Rpp_focus2pipe = fluid2solid_r_coeff(
+                    solution[j]['interface_focus2pipe_R'][0][i], solution[j]['interface_focus2pipe_R'][1][i],
+                    c2, c3, cs3,
+                    self.acoustic_lens.rho2, self.pipeline.rho
+                )
+
+                # 5. Transmission: Pipe Interface -> Impedance Interface
+                # Steel -> Water : (Solid -> Fluid)
+                Tpp_pipe2imp = solid2fluid_t_coeff(
+                    solution[j]['interface_pipe2imp'][0][i], solution[j]['interface_pipe2imp'][1][i],
+                    c3, c2, cs3,
+                    self.pipeline.rho, self.acoustic_lens.rho2
+                )
+
+                # 6. Transmission: Impedance Interface -> Lens Interface
+                # Water -> Impedance Matching : (Fluid -> Solid)
+                Tpp_imp2lens, Tsp_imp2lens = fluid2solid_t_coeff(
+                    solution[j]['interface_imp2lens'][0][i], solution[j]['interface_imp2lens'][1][i],
+                    c2, c_impedance, cs_impedance,
+                    self.acoustic_lens.rho2, self.acoustic_lens.impedance_matching.rho
+                )
+
+                # 7. Transmission: Lens Interface -> Transducer
+                # Impedance Matching -> Aluminum : (Solid -> Solid)
+                Tpp_lens2transd, _ = solid2solid_tr_coeff(
+                    solution[j]['interface_lens2transd'][0][i], solution[j]['interface_lens2transd'][1][i],
+                    c_impedance, c1, cs_impedance, cs1,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
+                )
+
+                transmission_ida = Tpp_lens2imp * Tpp_imp2pipe * Tpp_pipe2focus
+                transmission_volta = Rpp_focus2pipe * Tpp_pipe2imp * Tpp_imp2lens * Tpp_lens2transd
+
+                amplitudes["transmission_loss"][j, :, i] = transmission_ida + transmission_volta
+                amplitudes["transmission_loss"][j, :, i] = 1 - amplitudes["transmission_loss"][j, :, i]
 
             if self.directivity:
                 theta = solution[j]['firing_angle'][i]

@@ -40,7 +40,7 @@ outer_radius = np.float32(139.82e-3 / 2)
 wall_width = np.float32(16.23e-3)
 pipeline = Pipeline(outer_radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 
-num_elements = 12
+num_elements = 64
 
 transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, fc=5e6)
 transducer.zt += acoustic_lens.d
@@ -71,6 +71,11 @@ if mode == 'NN':
     x_imp, z_imp = extract_pts(sol, 'x_imp'), extract_pts(sol, 'z_imp')
     x_pipe, z_pipe = extract_pts(sol, 'x_pipe'), extract_pts(sol, 'z_pipe')
 
+    x_pipe_2, z_pipe_2 = extract_pts(sol, 'x_pipe_2'), extract_pts(sol, 'z_pipe_2')
+    x_imp_2, z_imp_2 = extract_pts(sol, 'x_imp_2'), extract_pts(sol, 'z_imp_2')
+    x_lens_2, z_lens_2 = extract_pts(sol, 'x_lens_2'), extract_pts(sol, 'z_lens_2')
+    x_transd, z_transd = extract_pts(sol, 'x_transd'), extract_pts(sol, 'z_transd')
+
 xf, zf = arg
 
 plt.figure()
@@ -94,12 +99,33 @@ for iter, n in enumerate(range(transducer.num_elem)):
         plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
         plt.plot([x_imp[n], x_pipe[n]], [z_imp[n], z_pipe[n]], "C2", linewidth=.5, label="Imp. -> Pipe")
         plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C3", linewidth=.5, label="Pipe -> Focus")
+
+        plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C4", linewidth=.5, label="Focus -> Pipe")
+        plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C4", linewidth=.5, label="Focus -> Pipe")
+        plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C5", linewidth=.5, label="Pipe -> Imp.")
+        plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C6", linewidth=.5, label="Imp. -> Lens")
     else:
         plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
         plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5)
         plt.plot([x_imp[n], x_pipe[n]], [z_imp[n], z_pipe[n]], "C2", linewidth=.5)
         plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C3", linewidth=.5)
+
+        plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C4", linewidth=.5)
+        plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C4", linewidth=.5)
+        plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C5", linewidth=.5)
+        plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C6", linewidth=.5)
+
 plt.plot(xf, zf, 'xr', label='Focus')
 plt.legend()
 plt.ylim(-5e-3, acoustic_lens.d + 5e-3)
+plt.show()
+
+fmc_data = amps['transmission_loss'][:, 0, 0]
+
+plt.figure()
+plt.plot(np.arange(transducer.num_elem), fmc_data, '-o', markersize=3)
+plt.title("Transmission Loss - NN")
+plt.xlabel("Transducer Element")
+plt.ylabel("Amplitude")
+plt.grid(True)
 plt.show()
