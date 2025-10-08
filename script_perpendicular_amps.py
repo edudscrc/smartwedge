@@ -72,14 +72,14 @@ tofs_no_matching, amps_no_matching, sol_no_matching = raytracer_no_matching.solv
 
 extract_pts = lambda list_dict, key: np.array([dict_i[key] for dict_i in list_dict]).flatten()
 
-xlens, zlens = extract_pts(sol, 'xlens'), extract_pts(sol, 'zlens')
+xlens, zlens = extract_pts(sol, 'x_lens'), extract_pts(sol, 'z_lens')
 xpipe, zpipe = extract_pts(sol, 'xpipe'), extract_pts(sol, 'zpipe')
 ximp, zimp = extract_pts(sol, 'ximp'), extract_pts(sol, 'zimp')
 ximp_2, zimp_2 = extract_pts(sol, 'ximp_2'), extract_pts(sol, 'zimp_2')
 xlens_2, zlens_2 = extract_pts(sol, 'xlens_2'), extract_pts(sol, 'zlens_2')
 xpipe_no_refl, ypipe_no_refl = extract_pts(sol, 'xpipe_no_refl'), extract_pts(sol, 'ypipe_no_refl')
 
-xlens_no_matching, zlens_no_matching = extract_pts(sol_no_matching, 'xlens'), extract_pts(sol_no_matching, 'zlens')
+xlens_no_matching, zlens_no_matching = extract_pts(sol_no_matching, 'x_lens'), extract_pts(sol_no_matching, 'z_lens')
 xpipe_no_matching, zpipe_no_matching = extract_pts(sol_no_matching, 'xpipe'), extract_pts(sol_no_matching, 'zpipe')
 
 xf, zf = arg

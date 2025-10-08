@@ -65,7 +65,7 @@ for impedance_thickness in thickness_arr:
 
     extract_pts = lambda list_dict, key: np.array([dict_i[key] for dict_i in list_dict]).flatten()
 
-    xlens, zlens = extract_pts(sol, 'xlens'), extract_pts(sol, 'zlens')
+    xlens, zlens = extract_pts(sol, 'x_lens'), extract_pts(sol, 'z_lens')
     xpipe, zpipe = extract_pts(sol, 'xpipe'), extract_pts(sol, 'zpipe')
     ximp, zimp = extract_pts(sol, 'ximp'), extract_pts(sol, 'zimp')
     ximp_2, zimp_2 = extract_pts(sol, 'ximp_2'), extract_pts(sol, 'zimp_2')
