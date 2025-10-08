@@ -40,7 +40,11 @@ class RayTracingSolver(ABC):
         solution = self._solve(xf, zf, mode, alpha_step, dist_tol, delta_alpha)
 
         if mode == 'NN':
-            tofs, amplitudes = self.get_tofs_NN(solution)
+            if self.acoustic_lens.impedance_matching is not None:
+                tofs, amplitudes = self.get_tofs_NN(solution)
+            else:
+                print('NN sem camada')
+                tofs, amplitudes = self.get_tofs_NN_without_imp(solution)
         elif mode == 'RN':
             tofs, amplitudes = self.get_tofs_NN(solution)
 
@@ -68,13 +72,22 @@ class RayTracingSolver(ABC):
 
         for i, (x_target, y_target) in enumerate(zip(xf, zf)):
             if mode == 'NN':
-                # Compute distances for the coarse grid
-                dic_coarse_distances = self._dist_kernel_NN(
-                    xc, yc,
-                    x_target * np.ones_like(alpha_grid_coarse),
-                    y_target * np.ones_like(alpha_grid_coarse),
-                    alpha_grid_coarse
-                )
+                if self.acoustic_lens.impedance_matching is not None:
+                    # Compute distances for the coarse grid
+                    dic_coarse_distances = self._dist_kernel_NN(
+                        xc, yc,
+                        x_target * np.ones_like(alpha_grid_coarse),
+                        y_target * np.ones_like(alpha_grid_coarse),
+                        alpha_grid_coarse
+                    )
+                else:
+                    # Compute distances for the coarse grid
+                    dic_coarse_distances = self._dist_kernel_NN_without_imp(
+                        xc, yc,
+                        x_target * np.ones_like(alpha_grid_coarse),
+                        y_target * np.ones_like(alpha_grid_coarse),
+                        alpha_grid_coarse
+                    )
             elif mode == 'RN':
                 # Compute distances for the coarse grid
                 dic_coarse_distances = self._dist_kernel_RN(
@@ -92,13 +105,22 @@ class RayTracingSolver(ABC):
             alpha_fine_subset = alpha_grid_fine[fine_start_idx:fine_end_idx]
 
             if mode == 'NN':
-                # Compute distances on the fine grid subset
-                fine_distances = self._dist_kernel_NN(
-                    xc, yc,
-                    x_target * np.ones_like(alpha_fine_subset),
-                    y_target * np.ones_like(alpha_fine_subset),
-                    alpha_fine_subset
-                )
+                if self.acoustic_lens.impedance_matching is not None:
+                    # Compute distances on the fine grid subset
+                    fine_distances = self._dist_kernel_NN(
+                        xc, yc,
+                        x_target * np.ones_like(alpha_fine_subset),
+                        y_target * np.ones_like(alpha_fine_subset),
+                        alpha_fine_subset
+                    )
+                else:
+                    # Compute distances on the fine grid subset
+                    fine_distances = self._dist_kernel_NN_without_imp(
+                        xc, yc,
+                        x_target * np.ones_like(alpha_fine_subset),
+                        y_target * np.ones_like(alpha_fine_subset),
+                        alpha_fine_subset
+                    )
             elif mode == 'RN':
                 # Compute distances on the fine grid subset
                 fine_distances = self._dist_kernel_RN(
@@ -111,8 +133,12 @@ class RayTracingSolver(ABC):
             alphaa[i] = alpha_fine_subset[np.nanargmin(fine_distances['dist'])]
 
         if mode == 'NN':
-            # Final evaluation with all optimal alphas
-            final_results = self._dist_kernel_NN(xc, yc, xf, zf, alphaa)
+            if self.acoustic_lens.impedance_matching is not None:
+                # Final evaluation with all optimal alphas
+                final_results = self._dist_kernel_NN(xc, yc, xf, zf, alphaa)
+            else:
+                # Final evaluation with all optimal alphas
+                final_results = self._dist_kernel_NN_without_imp(xc, yc, xf, zf, alphaa)
         elif mode == 'RN':
             # Final evaluation with all optimal alphas
             final_results = self._dist_kernel_RN(xc, yc, xf, zf, alphaa)
@@ -141,4 +167,12 @@ class RayTracingSolver(ABC):
 
     @abstractmethod
     def _dist_kernel_RN(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):
+        pass
+
+    @abstractmethod
+    def _dist_kernel_NN_without_imp(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):
+        pass
+
+    @abstractmethod
+    def get_tofs_NN_without_imp(self, solutions):
         pass
