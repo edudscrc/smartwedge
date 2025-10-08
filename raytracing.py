@@ -577,3 +577,138 @@ class RayTracing(RayTracingSolver):
         tofs = d1 / c1 + d2 / c_impedance + d3 / c2 + d4 / c3
 
         return tofs, amplitudes
+
+    def _dist_kernel_RN(self, xc: float, zc: float, xf: ndarray, zf: ndarray, acurve: float):
+        c1, c2, c3 = self.get_speeds()
+
+        c_impedance = self.acoustic_lens.impedance_matching.p_wave_speed
+        impedance_thickness = self.acoustic_lens.impedance_matching.thickness
+
+        #########
+        ## IDA ##
+        #########
+
+        # Coords. in Lens (Transducer Interface -> Lens Interface)
+        x_lens, z_lens = self.acoustic_lens.xy_from_alpha(acurve)
+        gamma_1 = np.arctan2((z_lens - zc), (x_lens - xc))
+        gamma_1 = gamma_1 + (gamma_1 < 0) * np.pi
+
+        # Lens Interface -> Impedance Interface
+        gamma_2, inc_2, ref_2 = snell(c1, c_impedance, gamma_1, self.acoustic_lens.dydx_from_alpha(acurve))
+        a_2 = np.tan(uhp(gamma_2))
+        b_2 = z_lens - a_2 * x_lens
+        alpha_2 = findIntersectionBetweenImpedanceMatchingAndRay(a_2, b_2, self.acoustic_lens)
+        # Coords. in Impedance
+        x_imp, z_imp = self.acoustic_lens.xy_from_alpha(alpha_2, thickness=impedance_thickness)
+
+        # Impedance Interface -> Lens Interface
+        gamma_refl_1, _, inc_refl_1, ref_refl_1 = reflection(gamma_2, self.acoustic_lens.dydx_from_alpha(alpha_2, thickness=impedance_thickness))
+        a_refl_1 = np.tan(uhp(gamma_refl_1))
+        b_refl_1 = z_imp - a_refl_1 * x_imp
+        alpha_refl_1 = findIntersectionBetweenAcousticLensAndRay(a_refl_1, b_refl_1, self.acoustic_lens)
+        # Coords. in Lens
+        x_lens_refl_1, z_lens_refl_1 = self.acoustic_lens.xy_from_alpha(alpha_refl_1)
+
+        # Lens Interface -> Impedance Interface
+        gamma_refl_2, _, inc_refl_2, ref_refl_2 = reflection(gamma_refl_1, self.acoustic_lens.dydx_from_alpha(alpha_refl_1))
+        a_refl_2 = np.tan(uhp(gamma_refl_2))
+        b_refl_2 = z_lens_refl_1 - a_refl_2 * x_lens_refl_1
+        alpha_refl_2 = findIntersectionBetweenImpedanceMatchingAndRay(a_refl_2, b_refl_2, self.acoustic_lens)
+        # Coords. in Impedance
+        x_imp_refl_2, z_imp_refl_2 = self.acoustic_lens.xy_from_alpha(alpha_refl_2, thickness=impedance_thickness)
+
+        # Impedance Interface -> Pipe Interface
+        gamma_3, inc_3, ref_3 = snell(c_impedance, c2, gamma_refl_2, self.acoustic_lens.dydx_from_alpha(alpha_refl_2, thickness=impedance_thickness))
+        a_3 = np.tan(uhp(gamma_3))
+        b_3 = z_imp_refl_2 - a_3 * x_imp_refl_2
+        aux_a_3 = a_3**2 + 1
+        aux_b_3 = 2 * a_3 * b_3 - 2 * (self.pipeline.xcenter + a_3 * self.pipeline.zcenter)
+        aux_c_3 = b_3 ** 2 + self.pipeline.xcenter ** 2 + self.pipeline.zcenter ** 2 - 2 * self.pipeline.zcenter * b_3 - self.pipeline.outer_radius ** 2
+        x_pipe_1, x_pipe_2 = roots_bhaskara(aux_a_3, aux_b_3, aux_c_3)
+        z_pipe_1, z_pipe_2 = a_3 * x_pipe_1 + b_3, a_3 * x_pipe_2 + b_3
+        z_upper = z_pipe_1 > z_pipe_2
+        # Coords. in Pipe
+        x_pipe = x_pipe_1 * z_upper + x_pipe_2 * (1 - z_upper)
+        z_pipe = z_pipe_1 * z_upper + z_pipe_2 * (1 - z_upper)
+
+        # Pipe Interface -> Focus
+        gamma_4, inc_4, ref_4 = snell(c2, c3, gamma_3, self.pipeline.dydx(x_pipe))
+        a_4 = np.tan(gamma_4)
+        b_4 = z_pipe - a_4 * x_pipe
+        aux_a_4 = -1 / a_4
+        aux_b_4 = zf - aux_a_4 * xf
+        # Coords. in Focus
+        x_found_focus = (aux_b_4 - b_4) / (a_4 - aux_a_4)
+        z_found_focus = a_4 * x_found_focus + b_4
+
+        # Distance between computed ray and focus
+        dist = (x_found_focus - xf)**2 + (z_found_focus - zf)**2
+
+        ###########
+        ## VOLTA ##
+        ###########
+
+        # Focus -> Pipe Interface
+        dz_5 = xf - self.pipeline.xcenter
+        dx_5 = -(zf - self.pipeline.zcenter)
+        gamma_5, _, inc_5, ref_5 = reflection(gamma_4, dz_5 / dx_5)
+        a_5 = np.tan(uhp(gamma_5))
+        b_5 = zf - a_5 * xf
+        aux_a_5 = a_5**2 + 1
+        aux_b_5 = 2 * a_5 * b_5 - 2 * (self.pipeline.xcenter + a_5 * self.pipeline.zcenter)
+        aux_c_5 = b_5 ** 2 + self.pipeline.xcenter ** 2 + self.pipeline.zcenter ** 2 - 2 * self.pipeline.zcenter * b_5 - self.pipeline.outer_radius ** 2
+        x_pipe_1, x_pipe_2 = roots_bhaskara(aux_a_5, aux_b_5, aux_c_5)
+        z_pipe_1, z_pipe_2 = a_5 * x_pipe_1 + b_5, a_5 * x_pipe_2 + b_5
+        z_upper = z_pipe_1 > z_pipe_2
+        # Coords. in Pipe
+        x_pipe_2 = x_pipe_1 * z_upper + x_pipe_2 * (1 - z_upper)
+        z_pipe_2 = z_pipe_1 * z_upper + z_pipe_2 * (1 - z_upper)
+
+        # Pipe Interface -> Impedance Interface
+        aux_alpha = findIntersectionBetweenImpedanceMatchingAndRay(a_5, b_5, self.acoustic_lens)  # Gambiarra?
+        gamma_6, inc_6, ref_6 = snell(c3, c2, gamma_5, self.acoustic_lens.dydx_from_alpha(aux_alpha, thickness=impedance_thickness))
+        a_6 = np.tan(uhp(gamma_6))
+        b_6 = z_pipe_2 - a_6 * x_pipe_2
+        alpha_3 = findIntersectionBetweenImpedanceMatchingAndRay(a_6, b_6, self.acoustic_lens)
+        # Coords. in Impedance
+        x_imp_2, z_imp_2 = self.acoustic_lens.xy_from_alpha(alpha_3, thickness=impedance_thickness)
+
+        # Impedance Interface -> Lens Interface
+        gamma_7, inc_7, ref_7 = snell(c2, c_impedance, gamma_6, self.acoustic_lens.dydx_from_alpha(alpha_3, thickness=impedance_thickness))
+        a_7 = np.tan(uhp(gamma_7))
+        b_7 = z_imp_2 - a_7 * x_imp_2
+        alpha_4 = findIntersectionBetweenAcousticLensAndRay(a_7, b_7, self.acoustic_lens)
+        # Coords. in Lens
+        x_lens_2, z_lens_2 = self.acoustic_lens.xy_from_alpha(alpha_4)
+
+        # Lens Interface -> Transducer Interface
+        alpha_5 = np.arctan2(x_lens_2, z_lens_2)
+        gamma_8, inc_8, ref_8 = snell(c_impedance, c1, gamma_7, self.acoustic_lens.dydx_from_alpha(alpha_5))
+        a_8 = np.tan(uhp(gamma_8))
+        b_8 = z_lens_2 - a_8 * x_lens_2
+
+        x_transd = (np.repeat(self.transducer.zt[0], len(b_8)) - b_8) / a_8
+        z_transd = np.repeat(self.transducer.zt[0], len(b_8))
+
+        return {
+            'x_lens': x_lens, 'z_lens': z_lens,
+            'x_imp': x_imp, 'z_imp': z_imp,
+            'x_lens_refl_1': x_lens_refl_1, 'z_lens_refl_1': z_lens_refl_1,
+            'x_imp_refl_2': x_imp_refl_2, 'z_imp_refl_2': z_imp_refl_2,
+            'x_pipe': x_pipe, 'z_pipe': z_pipe,
+            'xf': xf, 'zf': zf,
+            'x_pipe_2': x_pipe_2, 'z_pipe_2': z_pipe_2,
+            'x_imp_2': x_imp_2, 'z_imp_2': z_imp_2,
+            'x_lens_2': x_lens_2, 'z_lens_2': z_lens_2,
+            'x_transd': x_transd, 'z_transd': z_transd,
+            'dist': dist,
+            
+            'interface_lens2imp': [inc_2, ref_2],
+            'interface_imp2pipe': [inc_3, ref_3],
+            'interface_pipe2focus': [inc_4, ref_4],
+
+            'interface_focus2pipe_R': [inc_5, ref_5],
+            'interface_pipe2imp': [inc_6, ref_6],
+            'interface_imp2lens': [inc_7, ref_7],
+            'interface_lens2transd': [inc_8, ref_8],
+        }

@@ -41,6 +41,8 @@ class RayTracingSolver(ABC):
 
         if mode == 'NN':
             tofs, amplitudes = self.get_tofs_NN(solution)
+        elif mode == 'RN':
+            tofs, amplitudes = self.get_tofs_NN(solution)
 
         return tofs, amplitudes, solution
 
@@ -73,6 +75,14 @@ class RayTracingSolver(ABC):
                     y_target * np.ones_like(alpha_grid_coarse),
                     alpha_grid_coarse
                 )
+            elif mode == 'RN':
+                # Compute distances for the coarse grid
+                dic_coarse_distances = self._dist_kernel_RN(
+                    xc, yc,
+                    x_target * np.ones_like(alpha_grid_coarse),
+                    y_target * np.ones_like(alpha_grid_coarse),
+                    alpha_grid_coarse
+                )
             # Find alpha minimizing distance on coarse grid
             alpha_coarse_min = alpha_grid_coarse[np.nanargmin(dic_coarse_distances['dist'])]
 
@@ -89,13 +99,23 @@ class RayTracingSolver(ABC):
                     y_target * np.ones_like(alpha_fine_subset),
                     alpha_fine_subset
                 )
-
+            elif mode == 'RN':
+                # Compute distances on the fine grid subset
+                fine_distances = self._dist_kernel_RN(
+                    xc, yc,
+                    x_target * np.ones_like(alpha_fine_subset),
+                    y_target * np.ones_like(alpha_fine_subset),
+                    alpha_fine_subset
+                )
             # Find alpha minimizing distance on fine grid subset
             alphaa[i] = alpha_fine_subset[np.nanargmin(fine_distances['dist'])]
 
         if mode == 'NN':
             # Final evaluation with all optimal alphas
             final_results = self._dist_kernel_NN(xc, yc, xf, zf, alphaa)
+        elif mode == 'RN':
+            # Final evaluation with all optimal alphas
+            final_results = self._dist_kernel_RN(xc, yc, xf, zf, alphaa)
         final_results['firing_angle'] = alphaa
         # Set distances above tolerance to NaN
         final_results['dist'][final_results['dist'] >= tol] = np.nan
@@ -117,4 +137,8 @@ class RayTracingSolver(ABC):
 
     @abstractmethod
     def get_tofs_NN(self, solutions):
+        pass
+
+    @abstractmethod
+    def _dist_kernel_RN(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):
         pass
