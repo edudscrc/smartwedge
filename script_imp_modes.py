@@ -6,6 +6,8 @@ from pipeline import Pipeline
 from transducer import Transducer
 import matplotlib.ticker as ticker
 from pathlib import Path
+from framework.post_proc import envelope
+from simulator import Simulator
 
 
 def rotate_point(xy, theta_rad):
@@ -62,9 +64,36 @@ arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
 # NR -> Ida normal + Volta refletida
 # RN -> Ida refletida + Volta normal
 # RR -> Ida refletida + Volta refletida
-mode = 'RN'
+mode = 'NN'
 
 tofs, amps, sol = raytracer.solve(*arg, mode=mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3)
+delay_law_focused = tofs[transducer.num_elem // 2, :] - tofs
+simulation_parameters = {
+    "surface_echoes": True,
+    "gate_end": 80e-6,
+    "gate_start": 30e-6,
+    "fs": 64.5e6, # Hz
+    "response_type": "s-scan",
+    "emission_delaylaw": delay_law_focused,
+    "reception_delaylaw": delay_law_focused
+}
+
+sim = Simulator(simulation_parameters, [raytracer], verbose=True)
+sim.add_reflector(*arg, different_instances=False)
+sscan = sim.get_response(mode)
+sscan_env = envelope(sscan, axis=0)
+sscan_log = np.log10(sscan_env + 1e-6)
+
+alpha_max = np.pi/4
+alpha_min = -np.pi/4
+
+plt.figure()
+plt.imshow(
+    sscan,
+    extent=[np.rad2deg(alpha_min), np.rad2deg(alpha_max), sim.tspan[-1] * 1e6, sim.tspan[0] * 1e6],
+    aspect='auto', interpolation='none', cmap='jet'
+)
+plt.show()
 
 extract_pts = lambda list_dict, key: np.array([dict_i[key] for dict_i in list_dict]).flatten()
 

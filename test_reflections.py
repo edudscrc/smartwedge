@@ -59,16 +59,16 @@ for _aa, chosen_angle in enumerate(chosen_angle_grid):
         transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
         transducer.zt += acoustic_lens.d
 
-
+        # Focus
         # Raytracer engine to find time of flight between emitter and focus:
-        # raytracer = FocusRayTracer(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
+        raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
 
-
+        # Reflector
         # Raytracer engine to find time of flight reflection:
         raytracer2 = RayTracing(acoustic_lens, shifted_pipeline, transducer, transmission_loss=True, directivity=True)
-        #
 
-        # raytracer3 = FocusRayTracer(acoustic_lens, shifted_pipeline, transducer, transmission_loss=True, directivity=True)
+        # Focus
+        raytracer3 = RayTracing(acoustic_lens, shifted_pipeline, transducer, transmission_loss=True, directivity=True)
 
         #%%
         # Delay law related parameters:
@@ -168,45 +168,45 @@ for _aa, chosen_angle in enumerate(chosen_angle_grid):
         plt.savefig("../figures/sscan_surface.png", dpi=300)
         plt.show()
 
-        #%%
-        # configs = {
-        #     "surface_echoes": False,
-        #     "gate_end": 80e-6,
-        #     "gate_start": 30e-6,
-        #     "fs": 64.5e6,  # Hz
-        #     "response_type": "s-scan",
-        #     "emission_delaylaw": delay_law_focused,
-        #     "reception_delaylaw": delay_law_focused
-        # }
-        # Without surface:
-        # sim2 = Simulator(configs, [raytracer3], verbose=False)
-        # sim2.add_reflector(x_reflector, z_reflector + shifted_pipeline.zcenter, different_instances=True)
-        # sscan = sim2.get_response()
-        # sscan_env = envelope(sscan, axis=0)
+        %%
+        configs = {
+            "surface_echoes": False,
+            "gate_end": 80e-6,
+            "gate_start": 30e-6,
+            "fs": 64.5e6,  # Hz
+            "response_type": "s-scan",
+            "emission_delaylaw": delay_law_focused,
+            "reception_delaylaw": delay_law_focused
+        }
+        Without surface:
+        sim2 = Simulator(configs, [raytracer3], verbose=False)
+        sim2.add_reflector(x_reflector, z_reflector + shifted_pipeline.zcenter, different_instances=True)
+        sscan = sim2.get_response()
+        sscan_env = envelope(sscan, axis=0)
 
-        # t_flaw_idx, theta_flaw_idx, _ = np.where(sscan_env == sscan_env.max())
-        # theta_flaw, t_flaw = alpha_span[theta_flaw_idx], sim2.tspan[t_flaw_idx]
+        t_flaw_idx, theta_flaw_idx, _ = np.where(sscan_env == sscan_env.max())
+        theta_flaw, t_flaw = alpha_span[theta_flaw_idx], sim2.tspan[t_flaw_idx]
 
 
-        # fig, ax = plt.subplots(figsize=(12, 4), nrows=1, ncols=ncols)
-        # im = plt.imshow(sscan_env,
-        #                 extent=[np.rad2deg(alpha_min), np.rad2deg(alpha_max), sim1.tspan[-1] * 1e6, sim1.tspan[0] * 1e6],
-        #                 aspect='auto', interpolation='none', cmap='jet')
-        # plt.plot(np.degrees(theta_flaw), t_flaw * 1e6, 'xr')
-        # plt.ylim([65 + time_shift, 50 + time_shift])
-        # plt.grid(alpha=.25)
-        # plt.xlabel(r"$\alpha$-axis / (degrees)")
-        # plt.ylabel(r"time-axis / ($\mathrm{\mu s}$)")
-        # plt.xticks(np.arange(-45, 45 + 15, 15))
-        # plt.tight_layout()
-        # plt.savefig("../figures/sscan_flaw.png", dpi=300)
+        fig, ax = plt.subplots(figsize=(12, 4), nrows=1, ncols=ncols)
+        im = plt.imshow(sscan_env,
+                        extent=[np.rad2deg(alpha_min), np.rad2deg(alpha_max), sim1.tspan[-1] * 1e6, sim1.tspan[0] * 1e6],
+                        aspect='auto', interpolation='none', cmap='jet')
+        plt.plot(np.degrees(theta_flaw), t_flaw * 1e6, 'xr')
+        plt.ylim([65 + time_shift, 50 + time_shift])
+        plt.grid(alpha=.25)
+        plt.xlabel(r"$\alpha$-axis / (degrees)")
+        plt.ylabel(r"time-axis / ($\mathrm{\mu s}$)")
+        plt.xticks(np.arange(-45, 45 + 15, 15))
+        plt.tight_layout()
+        plt.savefig("../figures/sscan_flaw.png", dpi=300)
 
-        #%% Residual thickness:
+        %% Residual thickness:
 
-        # delta_tof = t_flaw - t_max_per_column[bisect(alpha_span, theta_flaw)]
-        # residual_thickness = .5 * delta_tof * c3 * 1e3
-        # print(f"Residual thickness = {residual_thickness[0]:.4f} mm")
-        # residual_thickness_matrix[_aa, _zz] = residual_thickness
+        delta_tof = t_flaw - t_max_per_column[bisect(alpha_span, theta_flaw)]
+        residual_thickness = .5 * delta_tof * c3 * 1e3
+        print(f"Residual thickness = {residual_thickness[0]:.4f} mm")
+        residual_thickness_matrix[_aa, _zz] = residual_thickness
 
 
 #%%

@@ -62,7 +62,7 @@ class Simulator:
             }
             self.sim_list.append(sim)
 
-    def __simulate(self):
+    def __simulate(self, mode):
         Nel = self.transducer.num_elem
         Nt = len(self.tspan)
         Nsim = len(self.sim_list)
@@ -72,21 +72,22 @@ class Simulator:
             if self.verbose:
                 print(f"Raytracer running: {i + 1}/{len(self.raytracer_list)}")
             if isinstance(raytracer, RayTracingSolver) and self.surface_echoes:
-                self.fmcs += self._simulate_reflection_raytracer(raytracer)  # or handle it appropriately
+                self.fmcs += self._simulate_focus_raytracer(raytracer, mode)  # or handle it appropriately
             else:
                 raise NotImplementedError(f"Unknown raytracer type: {type(raytracer)}")
 
-    def _simulate_focus_raytracer(self, focus_raytracer):
+    def _simulate_focus_raytracer(self, focus_raytracer: RayTracing, mode):
         Nel = focus_raytracer.transducer.num_elem
         Nt = len(self.tspan)
         Nsim = len(self.sim_list)
 
-        tofs, amplitudes = focus_raytracer.solve(self.xf, self.zf)
+        tofs, amplitudes, _ = focus_raytracer.solve(self.xf, self.zf, mode=mode)
         fmcs = np.zeros(shape=(Nt, Nel, Nel, Nsim), dtype=FLOAT)
 
         for i in prange(Nsim):
             tx_coeff_i = amplitudes['transmission_loss'][..., i]
-            rx_coeff_i = amplitudes['directivity'][..., i] * amplitudes['transmission_loss'][..., i]
+            # rx_coeff_i = amplitudes['directivity'][..., i] * amplitudes['transmission_loss'][..., i]
+            rx_coeff_i = amplitudes['transmission_loss_volta'][..., i]
 
             tofs_i = tofs[..., i]
             tofs_i = np.tile(tofs_i[:, np.newaxis], reps=(1, Nel))
@@ -99,33 +100,8 @@ class Simulator:
             )
         return fmcs
 
-    def _simulate_reflection_raytracer(self, reflection_raytracer):
-        Nel = reflection_raytracer.transducer.num_elem
-        Nt = len(self.tspan)
-        Nsim = len(self.sim_list)
-
-        tofs, amplitudes = reflection_raytracer.solve(self.transducer.xt, self.transducer.zt, solver='scipy-bounded')
-        fmcs = np.zeros(shape=(Nt, Nel, Nel, Nsim), dtype=FLOAT)
-
-        for i in prange(Nsim):
-            tx_coeff_i = np.nan_to_num(amplitudes['transmission_loss'][..., i], nan=1.)
-            rx_coeff_i = np.nan_to_num(amplitudes['directivity'][..., i], nan=1.)
-
-            tofs_tx = np.nan_to_num(tofs[..., i], nan=-1.)
-            tofs_rx = 0 * np.nan_to_num(tofs[..., i], nan=-1.)
-
-
-            fmcs[..., i] = fmc_sim_kernel(
-                self.tspan,
-                tofs_tx, tofs_rx.T,
-                tx_coeff_i, rx_coeff_i,
-                Nel, reflection_raytracer.transducer.fc, reflection_raytracer.transducer.bw
-            )
-
-        return fmcs
-
-    def __get_sscan(self):
-        self.fmcs = self.__get_fmc()
+    def __get_sscan(self, mode):
+        self.fmcs = self.__get_fmc(mode)
         self.sscans = fmc2sscan(
             self.fmcs,
             self.shifts_e,
@@ -134,21 +110,21 @@ class Simulator:
         )
         return self.sscans
 
-    def __get_fmc(self):
+    def __get_fmc(self, mode):
         if self.fmcs is None:
-            self.__simulate()
+            self.__simulate(mode)
         return self.fmcs
 
-    def get_response(self):
+    def get_response(self, mode):
         if len(self.sim_list) == 0:
             raise ValueError("No reflector set. You must add at least one reflector to simulate its response.")
 
         match self.response_type:
             case "s-scan":
-                return self.__get_sscan()
+                return self.__get_sscan(mode)
 
             case "fmc":
-                return self.__get_fmc()
+                return self.__get_fmc(mode)
 
             case _:
                 raise NotImplementedError

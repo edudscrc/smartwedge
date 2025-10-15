@@ -41,6 +41,7 @@ class RayTracingSolver(ABC):
 
         if mode == 'NN':
             if self.acoustic_lens.impedance_matching is not None:
+                print('NN com camada')
                 tofs, amplitudes = self.get_tofs_NN(solution)
             else:
                 print('NN sem camada')
@@ -74,6 +75,7 @@ class RayTracingSolver(ABC):
             if mode == 'NN':
                 if self.acoustic_lens.impedance_matching is not None:
                     # Compute distances for the coarse grid
+                    print('NN com camada')
                     dic_coarse_distances = self._dist_kernel_NN(
                         xc, yc,
                         x_target * np.ones_like(alpha_grid_coarse),
@@ -82,6 +84,7 @@ class RayTracingSolver(ABC):
                     )
                 else:
                     # Compute distances for the coarse grid
+                    print('NN sem camada')
                     dic_coarse_distances = self._dist_kernel_NN_without_imp(
                         xc, yc,
                         x_target * np.ones_like(alpha_grid_coarse),
