@@ -240,8 +240,8 @@ class RayTracing(RayTracingSolver):
         coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
 
         d1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
-        d2 = np.linalg.norm(coords_imp - coords_lens, axis=1)
-        d3 = np.linalg.norm(coords_pipe - coords_imp, axis=1)
+        d2 = np.linalg.norm(coords_lens - coords_imp, axis=1)
+        d3 = np.linalg.norm(coords_imp - coords_pipe, axis=1)
         d4 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
 
         tofs = d1 / c1 + d2 / c_impedance + d3 / c2 + d4 / c3
@@ -427,55 +427,55 @@ class RayTracing(RayTracingSolver):
         ###########
 
         # Focus -> Pipe Interface
-        dz_5 = xf - self.pipeline.xcenter
-        dx_5 = -(zf - self.pipeline.zcenter)
-        gamma_5, _, inc_5, ref_5 = reflection(gamma_3, dz_5 / dx_5)
-        a_5 = np.tan(uhp(gamma_5))
-        b_5 = zf - a_5 * xf
-        aux_a_5 = a_5**2 + 1
-        aux_b_5 = 2 * a_5 * b_5 - 2 * (self.pipeline.xcenter + a_5 * self.pipeline.zcenter)
-        aux_c_5 = b_5 ** 2 + self.pipeline.xcenter ** 2 + self.pipeline.zcenter ** 2 - 2 * self.pipeline.zcenter * b_5 - self.pipeline.outer_radius ** 2
-        x_pipe_1, x_pipe_2 = roots_bhaskara(aux_a_5, aux_b_5, aux_c_5)
-        z_pipe_1, z_pipe_2 = a_5 * x_pipe_1 + b_5, a_5 * x_pipe_2 + b_5
-        z_upper = z_pipe_1 > z_pipe_2
-        # Coords. in Pipe
-        x_pipe_2 = x_pipe_1 * z_upper + x_pipe_2 * (1 - z_upper)
-        z_pipe_2 = z_pipe_1 * z_upper + z_pipe_2 * (1 - z_upper)
+        # dz_5 = xf - self.pipeline.xcenter
+        # dx_5 = -(zf - self.pipeline.zcenter)
+        # gamma_5, _, inc_5, ref_5 = reflection(gamma_3, dz_5 / dx_5)
+        # a_5 = np.tan(uhp(gamma_5))
+        # b_5 = zf - a_5 * xf
+        # aux_a_5 = a_5**2 + 1
+        # aux_b_5 = 2 * a_5 * b_5 - 2 * (self.pipeline.xcenter + a_5 * self.pipeline.zcenter)
+        # aux_c_5 = b_5 ** 2 + self.pipeline.xcenter ** 2 + self.pipeline.zcenter ** 2 - 2 * self.pipeline.zcenter * b_5 - self.pipeline.outer_radius ** 2
+        # x_pipe_1, x_pipe_2 = roots_bhaskara(aux_a_5, aux_b_5, aux_c_5)
+        # z_pipe_1, z_pipe_2 = a_5 * x_pipe_1 + b_5, a_5 * x_pipe_2 + b_5
+        # z_upper = z_pipe_1 > z_pipe_2
+        # # Coords. in Pipe
+        # x_pipe_2 = x_pipe_1 * z_upper + x_pipe_2 * (1 - z_upper)
+        # z_pipe_2 = z_pipe_1 * z_upper + z_pipe_2 * (1 - z_upper)
 
-        # Pipe Interface -> Lens Interface
-        aux_alpha = findIntersectionBetweenAcousticLensAndRay(a_5, b_5, self.acoustic_lens)  # Gambiarra?
-        gamma_7, inc_7, ref_7 = snell(c3, c2, gamma_5, self.acoustic_lens.dydx_from_alpha(aux_alpha))
-        a_7 = np.tan(uhp(gamma_7))
-        b_7 = z_pipe_2 - a_7 * x_pipe_2
-        alpha_4 = findIntersectionBetweenAcousticLensAndRay(a_7, b_7, self.acoustic_lens)
-        # Coords. in Lens
-        x_lens_2, z_lens_2 = self.acoustic_lens.xy_from_alpha(alpha_4)
+        # # Pipe Interface -> Lens Interface
+        # aux_alpha = findIntersectionBetweenAcousticLensAndRay(a_5, b_5, self.acoustic_lens)  # Gambiarra?
+        # gamma_7, inc_7, ref_7 = snell(c3, c2, gamma_5, self.acoustic_lens.dydx_from_alpha(aux_alpha))
+        # a_7 = np.tan(uhp(gamma_7))
+        # b_7 = z_pipe_2 - a_7 * x_pipe_2
+        # alpha_4 = findIntersectionBetweenAcousticLensAndRay(a_7, b_7, self.acoustic_lens)
+        # # Coords. in Lens
+        # x_lens_2, z_lens_2 = self.acoustic_lens.xy_from_alpha(alpha_4)
 
-        # Lens Interface -> Transducer Interface
-        alpha_5 = np.arctan2(x_lens_2, z_lens_2)
-        gamma_8, inc_8, ref_8 = snell(c2, c1, gamma_7, self.acoustic_lens.dydx_from_alpha(alpha_5))
-        a_8 = np.tan(uhp(gamma_8))
-        b_8 = z_lens_2 - a_8 * x_lens_2
+        # # Lens Interface -> Transducer Interface
+        # alpha_5 = np.arctan2(x_lens_2, z_lens_2)
+        # gamma_8, inc_8, ref_8 = snell(c2, c1, gamma_7, self.acoustic_lens.dydx_from_alpha(alpha_5))
+        # a_8 = np.tan(uhp(gamma_8))
+        # b_8 = z_lens_2 - a_8 * x_lens_2
 
-        x_transd = (np.repeat(self.transducer.zt[0], len(b_8)) - b_8) / a_8
-        z_transd = np.repeat(self.transducer.zt[0], len(b_8))
+        # x_transd = (np.repeat(self.transducer.zt[0], len(b_8)) - b_8) / a_8
+        # z_transd = np.repeat(self.transducer.zt[0], len(b_8))
 
         return {
             'x_lens': x_lens, 'z_lens': z_lens,
             'x_pipe': x_pipe, 'z_pipe': z_pipe,
             'xf': xf, 'zf': zf,
             'x_pipe_2': x_pipe_2, 'z_pipe_2': z_pipe_2,
-            'x_lens_2': x_lens_2, 'z_lens_2': z_lens_2,
-            'x_transd': x_transd, 'z_transd': z_transd,
+            # 'x_lens_2': x_lens_2, 'z_lens_2': z_lens_2,
+            # 'x_transd': x_transd, 'z_transd': z_transd,
             
             'dist': dist,
 
             'interface_lens2pipe': [inc_2, ref_2],
             'interface_pipe2focus': [inc_3, ref_3],
 
-            'interface_focus2pipe_R': [inc_5, ref_5],
-            'interface_pipe2lens': [inc_7, ref_7],
-            'interface_lens2transd': [inc_8, ref_8],
+            # 'interface_focus2pipe_R': [inc_5, ref_5],
+            # 'interface_pipe2lens': [inc_7, ref_7],
+            # 'interface_lens2transd': [inc_8, ref_8],
         }
 
     def get_tofs_NN_without_imp(self, solution):
@@ -494,6 +494,7 @@ class RayTracing(RayTracingSolver):
 
         amplitudes = {
             "transmission_loss": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
+            "transmission_loss_volta": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
             "directivity": np.ones((n_elem, n_elem, n_focii), dtype=np.float64)
         }
 
@@ -530,39 +531,28 @@ class RayTracing(RayTracingSolver):
                 ## VOLTA ##
                 ###########
 
-                # 3. Reflection: Focus -> Pipe Interface
-                # Water -> Steel : (Fluid -> Solid)
-                Rpp_focus2pipe = fluid2solid_r_coeff(
-                    solution[j]['interface_focus2pipe_R'][0][i], solution[j]['interface_focus2pipe_R'][1][i],
-                    c2, c3, cs3,
-                    self.acoustic_lens.rho2, self.pipeline.rho
-                )
-
-                # 4. Transmission: Pipe Interface -> Lens Interface
+                # 3. Transmission: Focus -> Pipe Interface
                 # Steel -> Water : (Solid -> Fluid)
-                Tpp_pipe2lens = solid2fluid_t_coeff(
-                    solution[j]['interface_pipe2lens'][0][i], solution[j]['interface_pipe2lens'][1][i],
+                Tpp_focus2pipe = solid2fluid_t_coeff(
+                    solution[j]['interface_pipe2focus'][1][i], solution[j]['interface_pipe2focus'][0][i],
                     c3, c2, cs3,
                     self.pipeline.rho, self.acoustic_lens.rho2
                 )
 
-                # 5. Transmission: Lens Interface -> Transducer
+                # 4. Transmission: Pipe Interface -> Lens Interface
                 # Water -> Aluminum : (Fluid -> Solid)
-                Tpp_lens2transd, Tsp_lens2transd = fluid2solid_t_coeff(
-                    solution[j]['interface_lens2transd'][0][i], solution[j]['interface_lens2transd'][1][i],
+                Tpp_pipe2lens, _ = fluid2solid_t_coeff(
+                    solution[j]['interface_lens2pipe'][1][i], solution[j]['interface_lens2pipe'][0][i],
                     c2, c1, cs1,
                     self.acoustic_lens.rho2, self.acoustic_lens.rho1
                 )
 
-                transmission_ida = Tpp_lens2pipe * Tpp_pipe2focus
-                transmission_volta = Rpp_focus2pipe * Tpp_pipe2lens * Tpp_lens2transd
-
-                amplitudes["transmission_loss"][j, :, i] = transmission_ida + transmission_volta
-                amplitudes["transmission_loss"][j, :, i] = 1 - amplitudes["transmission_loss"][j, :, i]
+                amplitudes["transmission_loss"][j, :, i] = Tpp_lens2pipe * Tpp_pipe2focus
+                amplitudes["transmission_loss_volta"][j, :, i] = Tpp_focus2pipe * Tpp_pipe2lens
 
             if self.directivity:
                 theta = solution[j]['firing_angle'][i]
-                k = self.transducer.fc * 2 * np.pi / self.acoustic_lens.c1
+                k = self.transducer.fc * 2 * np.pi / c1
                 amplitudes["directivity"][j, :, i] *= far_field_directivity_solid(
                     theta, c1, c1 / 2, k, self.transducer.element_width
                 )
@@ -571,10 +561,9 @@ class RayTracing(RayTracingSolver):
         coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
 
         d1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
-        # d2 = np.linalg.norm(coords_imp - coords_lens, axis=1)
-        # d3 = np.linalg.norm(coords_pipe - coords_imp, axis=1)
-        d4 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
+        d2 = np.linalg.norm(coords_lens - coords_pipe, axis=1)
+        d3 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
 
-        tofs = d1 / c1 + d4 / c3
+        tofs = d1 / c1 + d2 / c2 + d3 / c3
 
         return tofs, amplitudes

@@ -36,7 +36,7 @@ alpha_max = np.float32(np.pi / 4.0) # Maximum sectorial angle (rad)
 alpha_0 = np.float32(0.0)           # Reference angle (boundary condition) (rad)
 h0 = np.float32(91.03e-3 + 1e-3)    # Length h chosen at the reference angle (m)
 
-has_impedance_matching = True
+has_impedance_matching = False
 
 acoustic_lens = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_aluminium, rho_water, impedance_matching=has_impedance_matching)
 
@@ -51,7 +51,7 @@ transducer.zt += acoustic_lens.d
 
 raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
 
-focus_horizontal_offset = 0
+focus_horizontal_offset = 8e-3
 
 arg = (
     focus_horizontal_offset,
@@ -89,7 +89,7 @@ alpha_min = -np.pi/4
 
 plt.figure()
 plt.imshow(
-    sscan,
+    sscan_log,
     extent=[np.rad2deg(alpha_min), np.rad2deg(alpha_max), sim.tspan[-1] * 1e6, sim.tspan[0] * 1e6],
     aspect='auto', interpolation='none', cmap='jet'
 )
@@ -107,11 +107,11 @@ if mode == 'NN':
 
     x_pipe_2, z_pipe_2 = extract_pts(sol, 'x_pipe_2'), extract_pts(sol, 'z_pipe_2')
 
-    if has_impedance_matching:
-        x_imp_2, z_imp_2 = extract_pts(sol, 'x_imp_2'), extract_pts(sol, 'z_imp_2')
+    # if has_impedance_matching:
+    #     x_imp_2, z_imp_2 = extract_pts(sol, 'x_imp_2'), extract_pts(sol, 'z_imp_2')
 
-    x_lens_2, z_lens_2 = extract_pts(sol, 'x_lens_2'), extract_pts(sol, 'z_lens_2')
-    x_transd, z_transd = extract_pts(sol, 'x_transd'), extract_pts(sol, 'z_transd')
+    # x_lens_2, z_lens_2 = extract_pts(sol, 'x_lens_2'), extract_pts(sol, 'z_lens_2')
+    # x_transd, z_transd = extract_pts(sol, 'x_transd'), extract_pts(sol, 'z_transd')
 elif mode == 'RN':
     x_lens, z_lens = extract_pts(sol, 'x_lens'), extract_pts(sol, 'z_lens')
     x_imp, z_imp = extract_pts(sol, 'x_imp'), extract_pts(sol, 'z_imp')
@@ -215,26 +215,27 @@ else:
                 plt.plot([x_lens[n], x_pipe[n]], [z_lens[n], z_pipe[n]], "C1", linewidth=.5, label="Lens -> Pipe")
                 plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C2", linewidth=.5, label="Pipe -> Focus")
 
-                plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C3", linewidth=.5, label="Focus -> Pipe")
-                plt.plot([x_pipe_2[n], x_lens_2[n]], [z_pipe_2[n], z_lens_2[n]], "C4", linewidth=.5, label="Pipe -> Lens")
-                plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C5", linewidth=.5, label="Lens -> Transducer")
+                # plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C3", linewidth=.5, label="Focus -> Pipe")
+                # plt.plot([x_pipe_2[n], x_lens_2[n]], [z_pipe_2[n], z_lens_2[n]], "C4", linewidth=.5, label="Pipe -> Lens")
+                # plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C5", linewidth=.5, label="Lens -> Transducer")
             else:
                 plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
                 plt.plot([x_lens[n], x_pipe[n]], [z_lens[n], z_pipe[n]], "C1", linewidth=.5)
                 plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C2", linewidth=.5)
 
-                plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C3", linewidth=.5)
-                plt.plot([x_pipe_2[n], x_lens_2[n]], [z_pipe_2[n], z_lens_2[n]], "C4", linewidth=.5)
-                plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C5", linewidth=.5)
+                # plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C3", linewidth=.5)
+                # plt.plot([x_pipe_2[n], x_lens_2[n]], [z_pipe_2[n], z_lens_2[n]], "C4", linewidth=.5)
+                # plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C5", linewidth=.5)
     plt.plot(xf, zf, 'xr', label='Focus')
     plt.legend()
     plt.ylim(-5e-3, acoustic_lens.d + 5e-3)
     plt.show()
 
 fmc_data = amps['transmission_loss'][:, 0, 0]
+fmc_data_volta = amps['transmission_loss_volta'][:, 0, 0]
 
 plt.figure()
-plt.plot(np.arange(transducer.num_elem), fmc_data, '-o', markersize=3)
+plt.plot(np.arange(transducer.num_elem), fmc_data * fmc_data_volta, '-o', markersize=3)
 plt.title(f"Transmission Loss - {mode} - with Impedance Matching" if has_impedance_matching else f"Transmission Loss - {mode} - without Impedance Matching")
 plt.xlabel("Transducer Element")
 plt.ylabel("Amplitude")
