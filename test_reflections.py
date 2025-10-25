@@ -61,14 +61,14 @@ for _aa, chosen_angle in enumerate(chosen_angle_grid):
 
         # Focus
         # Raytracer engine to find time of flight between emitter and focus:
-        raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
+        raytracer = RayTracing(acoustic_lens, pipeline, transducer, final_amplitude=True, directivity=True)
 
         # Reflector
         # Raytracer engine to find time of flight reflection:
-        raytracer2 = RayTracing(acoustic_lens, shifted_pipeline, transducer, transmission_loss=True, directivity=True)
+        raytracer2 = RayTracing(acoustic_lens, shifted_pipeline, transducer, final_amplitude=True, directivity=True)
 
         # Focus
-        raytracer3 = RayTracing(acoustic_lens, shifted_pipeline, transducer, transmission_loss=True, directivity=True)
+        raytracer3 = RayTracing(acoustic_lens, shifted_pipeline, transducer, final_amplitude=True, directivity=True)
 
         #%%
         # Delay law related parameters:

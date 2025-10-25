@@ -36,7 +36,7 @@ alpha_max = np.float32(np.pi / 4.0) # Maximum sectorial angle (rad)
 alpha_0 = np.float32(0.0)           # Reference angle (boundary condition) (rad)
 h0 = np.float32(91.03e-3 + 1e-3)    # Length h chosen at the reference angle (m)
 
-has_impedance_matching = False
+has_impedance_matching = True
 
 acoustic_lens = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_aluminium, rho_water, impedance_matching=has_impedance_matching)
 
@@ -49,195 +49,286 @@ num_elements = 64
 transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, fc=5e6)
 transducer.zt += acoustic_lens.d
 
-raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
+raytracer = RayTracing(acoustic_lens, pipeline, transducer, final_amplitude=True, directivity=True)
 
-focus_horizontal_offset = 8e-3
-
-arg = (
-    focus_horizontal_offset,
-    pipeline.inner_radius + 10e-3,
-)
-arg = rotate_point(arg, theta_rad=0)
-arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
-
-# NN -> Ida normal + Volta normal
-# NR -> Ida normal + Volta refletida
-# RN -> Ida refletida + Volta normal
-# RR -> Ida refletida + Volta refletida
 mode = 'NN'
 
-tofs, amps, sol = raytracer.solve(*arg, mode=mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3)
-delay_law_focused = tofs[transducer.num_elem // 2, :] - tofs
+# 1. DEFINE YOUR SCAN ANGLES AND FOCAL DEPTH
+# (Instead of just one 'arg')
+# -----------------------------------------------------------------
+num_angles = 181  # Or however many lines you want in your S-Scan
+alpha_max_scan = np.pi / 4.0
+alpha_min_scan = -np.pi / 4.0
+scan_angles = np.linspace(alpha_min_scan, alpha_max_scan, num_angles)
+
+# Use a constant focal radius for all angles
+focal_radius = pipeline.inner_radius + 10e-3 
+center_elem = transducer.num_elem // 2
+
+# Initialize empty delay law matrices
+all_delay_laws = np.zeros((transducer.num_elem, num_angles), dtype=np.float32)
+
+print("Calculating delay laws for S-Scan...")
+# 2. LOOP THROUGH EACH ANGLE AND CALCULATE DELAYS
+# -----------------------------------------------------------------
+for i, angle_rad in enumerate(scan_angles):
+    print(f"Solving {i}/{num_angles - 1}")
+    # Calculate the (x, z) coordinate for the focal point at this angle
+    xf = focal_radius * np.sin(angle_rad)
+    zf = focal_radius * np.cos(angle_rad)
+    
+    # Apply the same rotation and centering as you did for 'arg'
+    xf_rot, zf_rot = rotate_point((xf, zf), theta_rad=0)
+    xf_final = xf_rot + pipeline.xcenter
+    zf_final = zf_rot + pipeline.zcenter
+    
+    # Solve for the TOFs to this one point
+    # Note: We only need 'tofs', so we ignore amps and sol
+    tofs_i, _, _ = raytracer.solve(xf_final, zf_final, mode=mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3)
+    
+    # Calculate the delay law relative to the center element
+    # tofs_i has shape (64, 1), so we use [:, 0] to get a (64,) array
+    delay_law_i = tofs_i[center_elem, 0] - tofs_i[:, 0]
+    
+    # Store this delay law as one column in our matrix
+    all_delay_laws[:, i] = delay_law_i
+
+print("Delay law calculation complete.")
+
+# 3. USE THE NEW DELAY LAW MATRIX IN THE SIMULATOR
+# -----------------------------------------------------------------
 simulation_parameters = {
     "surface_echoes": True,
     "gate_end": 80e-6,
     "gate_start": 30e-6,
     "fs": 64.5e6, # Hz
     "response_type": "s-scan",
-    "emission_delaylaw": delay_law_focused,
-    "reception_delaylaw": delay_law_focused
+    "emission_delaylaw": all_delay_laws,     # <-- USE THE FULL MATRIX
+    "reception_delaylaw": all_delay_laws    # <-- USE THE FULL MATRIX
 }
 
 sim = Simulator(simulation_parameters, [raytracer], verbose=True)
+
+# 4. ADD THE REFLECTOR YOU WANT TO IMAGE
+# (This can be the same 'arg' as before)
+# -----------------------------------------------------------------
+focus_horizontal_offset = -5e-3
+arg = (
+    focus_horizontal_offset,
+    pipeline.inner_radius + 10e-3,
+)
+arg = rotate_point(arg, theta_rad=0)
+arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
 sim.add_reflector(*arg, different_instances=False)
+
+# 5. GET THE RESPONSE AND PLOT
+# -----------------------------------------------------------------
 sscan = sim.get_response(mode)
 sscan_env = envelope(sscan, axis=0)
 sscan_log = np.log10(sscan_env + 1e-6)
 
-alpha_max = np.pi/4
-alpha_min = -np.pi/4
+# The sscan shape will now be (num_samples, num_angles, 1)
+# Squeeze it to (num_samples, num_angles) for imshow
+sscan_log = np.squeeze(sscan_log) 
 
 plt.figure()
 plt.imshow(
     sscan_log,
-    extent=[np.rad2deg(alpha_min), np.rad2deg(alpha_max), sim.tspan[-1] * 1e6, sim.tspan[0] * 1e6],
+    extent=[np.rad2deg(alpha_min_scan), np.rad2deg(alpha_max_scan), sim.tspan[-1] * 1e6, sim.tspan[0] * 1e6], # Use your scan angle limits
     aspect='auto', interpolation='none', cmap='jet'
 )
+plt.xlabel("Angle (degrees)")
+plt.ylabel("Time (us)")
+plt.title("S-Scan")
 plt.show()
 
-extract_pts = lambda list_dict, key: np.array([dict_i[key] for dict_i in list_dict]).flatten()
+# focus_horizontal_offset = 8e-3
 
-if mode == 'NN':
-    x_lens, z_lens = extract_pts(sol, 'x_lens'), extract_pts(sol, 'z_lens')
+# arg = (
+#     focus_horizontal_offset,
+#     pipeline.inner_radius + 10e-3,
+# )
+# arg = rotate_point(arg, theta_rad=0)
+# arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
 
-    if has_impedance_matching:
-        x_imp, z_imp = extract_pts(sol, 'x_imp'), extract_pts(sol, 'z_imp')
+# # NN -> Ida normal + Volta normal
+# # NR -> Ida normal + Volta refletida
+# # RN -> Ida refletida + Volta normal
+# # RR -> Ida refletida + Volta refletida
+# mode = 'NN'
 
-    x_pipe, z_pipe = extract_pts(sol, 'x_pipe'), extract_pts(sol, 'z_pipe')
+# tofs, amps, sol = raytracer.solve(*arg, mode=mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3)
+# delay_law_focused = tofs[transducer.num_elem // 2, :] - tofs
+# simulation_parameters = {
+#     "surface_echoes": True,
+#     "gate_end": 80e-6,
+#     "gate_start": 30e-6,
+#     "fs": 64.5e6, # Hz
+#     "response_type": "s-scan",
+#     "emission_delaylaw": delay_law_focused,
+#     "reception_delaylaw": delay_law_focused
+# }
 
-    x_pipe_2, z_pipe_2 = extract_pts(sol, 'x_pipe_2'), extract_pts(sol, 'z_pipe_2')
+# sim = Simulator(simulation_parameters, [raytracer], verbose=True)
+# sim.add_reflector(*arg, different_instances=False)
+# sscan = sim.get_response(mode)
+# sscan_env = envelope(sscan, axis=0)
+# sscan_log = np.log10(sscan_env + 1e-6)
 
-    # if has_impedance_matching:
-    #     x_imp_2, z_imp_2 = extract_pts(sol, 'x_imp_2'), extract_pts(sol, 'z_imp_2')
+# alpha_max = np.pi/4
+# alpha_min = -np.pi/4
 
-    # x_lens_2, z_lens_2 = extract_pts(sol, 'x_lens_2'), extract_pts(sol, 'z_lens_2')
-    # x_transd, z_transd = extract_pts(sol, 'x_transd'), extract_pts(sol, 'z_transd')
-elif mode == 'RN':
-    x_lens, z_lens = extract_pts(sol, 'x_lens'), extract_pts(sol, 'z_lens')
-    x_imp, z_imp = extract_pts(sol, 'x_imp'), extract_pts(sol, 'z_imp')
-    x_lens_refl_1, z_lens_refl_1 = extract_pts(sol, 'x_lens_refl_1'), extract_pts(sol, 'z_lens_refl_1')
-    x_imp_refl_2, z_imp_refl_2 = extract_pts(sol, 'x_imp_refl_2'), extract_pts(sol, 'z_imp_refl_2')
-    x_pipe, z_pipe = extract_pts(sol, 'x_pipe'), extract_pts(sol, 'z_pipe')
-    x_pipe_2, z_pipe_2 = extract_pts(sol, 'x_pipe_2'), extract_pts(sol, 'z_pipe_2')
-    x_imp_2, z_imp_2 = extract_pts(sol, 'x_imp_2'), extract_pts(sol, 'z_imp_2')
-    x_lens_2, z_lens_2 = extract_pts(sol, 'x_lens_2'), extract_pts(sol, 'z_lens_2')
-    x_transd, z_transd = extract_pts(sol, 'x_transd'), extract_pts(sol, 'z_transd')
+# plt.figure()
+# plt.imshow(
+#     sscan_log,
+#     extent=[np.rad2deg(alpha_min), np.rad2deg(alpha_max), sim.tspan[-1] * 1e6, sim.tspan[0] * 1e6],
+#     aspect='auto', interpolation='none', cmap='jet'
+# )
+# plt.show()
 
-xf, zf = arg
+# extract_pts = lambda list_dict, key: np.array([dict_i[key] for dict_i in list_dict]).flatten()
 
-if has_impedance_matching:
-    plt.figure()
-    plt.title(f"Simulation with Impedance Matching - {mode}")
-    plt.plot(transducer.xt, transducer.zt, 'sk')
-    plt.plot(0, 0, 'or')
-    plt.plot(0, acoustic_lens.d, 'or'   )
-    plt.plot(pipeline.xout, pipeline.zout, 'k')
-    plt.plot(pipeline.xint, pipeline.zint, 'k')
-    plt.plot(acoustic_lens.xlens, acoustic_lens.zlens, 'k')
-    plt.plot(acoustic_lens.x_imp, acoustic_lens.z_imp, 'k')
-    plt.axis("equal")
-    plt.grid(True)
-    plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x:.1f}"))
-    plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x:.1f}"))
-    plt.xlabel("x-axis / (mm)")
-    plt.ylabel("y-axis / (mm)")
-    for iter, n in enumerate(range(transducer.num_elem)):
-        if mode == 'NN':
-            if iter == 0:
-                plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
-                plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
-                plt.plot([x_imp[n], x_pipe[n]], [z_imp[n], z_pipe[n]], "C2", linewidth=.5, label="Imp. -> Pipe")
-                plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C3", linewidth=.5, label="Pipe -> Focus")
+# if mode == 'NN':
+#     x_lens, z_lens = extract_pts(sol, 'x_lens'), extract_pts(sol, 'z_lens')
 
-                plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C4", linewidth=.5, label="Focus -> Pipe")
-                plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C4", linewidth=.5, label="Pipe -> Imp.")
-                plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C5", linewidth=.5, label="Imp. -> Lens")
-                plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C6", linewidth=.5, label="Lens -> Transd.")
-            else:
-                plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
-                plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5)
-                plt.plot([x_imp[n], x_pipe[n]], [z_imp[n], z_pipe[n]], "C2", linewidth=.5)
-                plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C3", linewidth=.5)
+#     if has_impedance_matching:
+#         x_imp, z_imp = extract_pts(sol, 'x_imp'), extract_pts(sol, 'z_imp')
 
-                plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C4", linewidth=.5)
-                plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C4", linewidth=.5)
-                plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C5", linewidth=.5)
-                plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C6", linewidth=.5)
-        elif mode == 'RN':
-            if iter == 0:
-                plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
-                plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
-                plt.plot([x_imp[n], x_lens_refl_1[n]], [z_imp[n], z_lens_refl_1[n]], "C2", linewidth=.5, label="Imp. -> Lens")
-                plt.plot([x_lens_refl_1[n], x_imp_refl_2[n]], [z_lens_refl_1[n], z_imp_refl_2[n]], "C3", linewidth=.5, label="Lens -> Imp.")
-                plt.plot([x_imp_refl_2[n], x_pipe[n]], [z_imp_refl_2[n], z_pipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
-                plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
+#     x_pipe, z_pipe = extract_pts(sol, 'x_pipe'), extract_pts(sol, 'z_pipe')
 
-                plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C6", linewidth=.5, label="Focus -> Pipe")
-                plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C7", linewidth=.5, label="Focus -> Pipe")
-                plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C8", linewidth=.5, label="Pipe -> Imp.")
-                plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C9", linewidth=.5, label="Imp. -> Lens")
-            else:
-                plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
-                plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5)
-                plt.plot([x_imp[n], x_lens_refl_1[n]], [z_imp[n], z_lens_refl_1[n]], "C2", linewidth=.5)
-                plt.plot([x_lens_refl_1[n], x_imp_refl_2[n]], [z_lens_refl_1[n], z_imp_refl_2[n]], "C3", linewidth=.5)
-                plt.plot([x_imp_refl_2[n], x_pipe[n]], [z_imp_refl_2[n], z_pipe[n]], "C4", linewidth=.5)
-                plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C5", linewidth=.5)
+#     x_pipe_2, z_pipe_2 = extract_pts(sol, 'x_pipe_2'), extract_pts(sol, 'z_pipe_2')
 
-                plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C6", linewidth=.5)
-                plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C7", linewidth=.5)
-                plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C8", linewidth=.5)
-                plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C9", linewidth=.5)
+#     # if has_impedance_matching:
+#     #     x_imp_2, z_imp_2 = extract_pts(sol, 'x_imp_2'), extract_pts(sol, 'z_imp_2')
 
-    plt.plot(xf, zf, 'xr', label='Focus')
-    plt.legend()
-    plt.ylim(-5e-3, acoustic_lens.d + 5e-3)
-    plt.show()
-else:
-    plt.figure()
-    plt.title(f"Simulation without Impedance Matching - {mode}")
-    plt.plot(transducer.xt, transducer.zt, 'sk')
-    plt.plot(0, 0, 'or')
-    plt.plot(0, acoustic_lens.d, 'or'   )
-    plt.plot(pipeline.xout, pipeline.zout, 'k')
-    plt.plot(pipeline.xint, pipeline.zint, 'k')
-    plt.plot(acoustic_lens.xlens, acoustic_lens.zlens, 'k')
-    plt.axis("equal")
-    plt.grid(True)
-    plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x:.1f}"))
-    plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x:.1f}"))
-    plt.xlabel("x-axis / (mm)")
-    plt.ylabel("y-axis / (mm)")
-    for iter, n in enumerate(range(transducer.num_elem)):
-        if mode == 'NN':
-            if iter == 0:
-                plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
-                plt.plot([x_lens[n], x_pipe[n]], [z_lens[n], z_pipe[n]], "C1", linewidth=.5, label="Lens -> Pipe")
-                plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C2", linewidth=.5, label="Pipe -> Focus")
+#     # x_lens_2, z_lens_2 = extract_pts(sol, 'x_lens_2'), extract_pts(sol, 'z_lens_2')
+#     # x_transd, z_transd = extract_pts(sol, 'x_transd'), extract_pts(sol, 'z_transd')
+# elif mode == 'RN':
+#     x_lens, z_lens = extract_pts(sol, 'x_lens'), extract_pts(sol, 'z_lens')
+#     x_imp, z_imp = extract_pts(sol, 'x_imp'), extract_pts(sol, 'z_imp')
+#     x_lens_refl_1, z_lens_refl_1 = extract_pts(sol, 'x_lens_refl_1'), extract_pts(sol, 'z_lens_refl_1')
+#     x_imp_refl_2, z_imp_refl_2 = extract_pts(sol, 'x_imp_refl_2'), extract_pts(sol, 'z_imp_refl_2')
+#     x_pipe, z_pipe = extract_pts(sol, 'x_pipe'), extract_pts(sol, 'z_pipe')
+#     x_pipe_2, z_pipe_2 = extract_pts(sol, 'x_pipe_2'), extract_pts(sol, 'z_pipe_2')
+#     x_imp_2, z_imp_2 = extract_pts(sol, 'x_imp_2'), extract_pts(sol, 'z_imp_2')
+#     x_lens_2, z_lens_2 = extract_pts(sol, 'x_lens_2'), extract_pts(sol, 'z_lens_2')
+#     x_transd, z_transd = extract_pts(sol, 'x_transd'), extract_pts(sol, 'z_transd')
 
-                # plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C3", linewidth=.5, label="Focus -> Pipe")
-                # plt.plot([x_pipe_2[n], x_lens_2[n]], [z_pipe_2[n], z_lens_2[n]], "C4", linewidth=.5, label="Pipe -> Lens")
-                # plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C5", linewidth=.5, label="Lens -> Transducer")
-            else:
-                plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
-                plt.plot([x_lens[n], x_pipe[n]], [z_lens[n], z_pipe[n]], "C1", linewidth=.5)
-                plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C2", linewidth=.5)
+# xf, zf = arg
 
-                # plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C3", linewidth=.5)
-                # plt.plot([x_pipe_2[n], x_lens_2[n]], [z_pipe_2[n], z_lens_2[n]], "C4", linewidth=.5)
-                # plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C5", linewidth=.5)
-    plt.plot(xf, zf, 'xr', label='Focus')
-    plt.legend()
-    plt.ylim(-5e-3, acoustic_lens.d + 5e-3)
-    plt.show()
+# if has_impedance_matching:
+#     plt.figure()
+#     plt.title(f"Simulation with Impedance Matching - {mode}")
+#     plt.plot(transducer.xt, transducer.zt, 'sk')
+#     plt.plot(0, 0, 'or')
+#     plt.plot(0, acoustic_lens.d, 'or'   )
+#     plt.plot(pipeline.xout, pipeline.zout, 'k')
+#     plt.plot(pipeline.xint, pipeline.zint, 'k')
+#     plt.plot(acoustic_lens.xlens, acoustic_lens.zlens, 'k')
+#     plt.plot(acoustic_lens.x_imp, acoustic_lens.z_imp, 'k')
+#     plt.axis("equal")
+#     plt.grid(True)
+#     plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x:.1f}"))
+#     plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x:.1f}"))
+#     plt.xlabel("x-axis / (mm)")
+#     plt.ylabel("y-axis / (mm)")
+#     for iter, n in enumerate(range(transducer.num_elem)):
+#         if mode == 'NN':
+#             if iter == 0:
+#                 plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
+#                 plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
+#                 plt.plot([x_imp[n], x_pipe[n]], [z_imp[n], z_pipe[n]], "C2", linewidth=.5, label="Imp. -> Pipe")
+#                 plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C3", linewidth=.5, label="Pipe -> Focus")
 
-fmc_data = amps['transmission_loss'][:, 0, 0]
-fmc_data_volta = amps['transmission_loss_volta'][:, 0, 0]
+#                 plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C4", linewidth=.5, label="Focus -> Pipe")
+#                 plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C4", linewidth=.5, label="Pipe -> Imp.")
+#                 plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C5", linewidth=.5, label="Imp. -> Lens")
+#                 plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C6", linewidth=.5, label="Lens -> Transd.")
+#             else:
+#                 plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
+#                 plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5)
+#                 plt.plot([x_imp[n], x_pipe[n]], [z_imp[n], z_pipe[n]], "C2", linewidth=.5)
+#                 plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C3", linewidth=.5)
 
-plt.figure()
-plt.plot(np.arange(transducer.num_elem), fmc_data * fmc_data_volta, '-o', markersize=3)
-plt.title(f"Transmission Loss - {mode} - with Impedance Matching" if has_impedance_matching else f"Transmission Loss - {mode} - without Impedance Matching")
-plt.xlabel("Transducer Element")
-plt.ylabel("Amplitude")
-plt.grid(True)
-plt.show()
+#                 plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C4", linewidth=.5)
+#                 plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C4", linewidth=.5)
+#                 plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C5", linewidth=.5)
+#                 plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C6", linewidth=.5)
+#         elif mode == 'RN':
+#             if iter == 0:
+#                 plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
+#                 plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5, label="Lens -> Imp.")
+#                 plt.plot([x_imp[n], x_lens_refl_1[n]], [z_imp[n], z_lens_refl_1[n]], "C2", linewidth=.5, label="Imp. -> Lens")
+#                 plt.plot([x_lens_refl_1[n], x_imp_refl_2[n]], [z_lens_refl_1[n], z_imp_refl_2[n]], "C3", linewidth=.5, label="Lens -> Imp.")
+#                 plt.plot([x_imp_refl_2[n], x_pipe[n]], [z_imp_refl_2[n], z_pipe[n]], "C4", linewidth=.5, label="Imp. -> Pipe")
+#                 plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C5", linewidth=.5, label="Pipe -> Focus")
+
+#                 plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C6", linewidth=.5, label="Focus -> Pipe")
+#                 plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C7", linewidth=.5, label="Focus -> Pipe")
+#                 plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C8", linewidth=.5, label="Pipe -> Imp.")
+#                 plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C9", linewidth=.5, label="Imp. -> Lens")
+#             else:
+#                 plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
+#                 plt.plot([x_lens[n], x_imp[n]], [z_lens[n], z_imp[n]], "C1", linewidth=.5)
+#                 plt.plot([x_imp[n], x_lens_refl_1[n]], [z_imp[n], z_lens_refl_1[n]], "C2", linewidth=.5)
+#                 plt.plot([x_lens_refl_1[n], x_imp_refl_2[n]], [z_lens_refl_1[n], z_imp_refl_2[n]], "C3", linewidth=.5)
+#                 plt.plot([x_imp_refl_2[n], x_pipe[n]], [z_imp_refl_2[n], z_pipe[n]], "C4", linewidth=.5)
+#                 plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C5", linewidth=.5)
+
+#                 plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C6", linewidth=.5)
+#                 plt.plot([x_pipe_2[n], x_imp_2[n]], [z_pipe_2[n], z_imp_2[n]], "C7", linewidth=.5)
+#                 plt.plot([x_imp_2[n], x_lens_2[n]], [z_imp_2[n], z_lens_2[n]], "C8", linewidth=.5)
+#                 plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C9", linewidth=.5)
+
+#     plt.plot(xf, zf, 'xr', label='Focus')
+#     plt.legend()
+#     plt.ylim(-5e-3, acoustic_lens.d + 5e-3)
+#     plt.show()
+# else:
+#     plt.figure()
+#     plt.title(f"Simulation without Impedance Matching - {mode}")
+#     plt.plot(transducer.xt, transducer.zt, 'sk')
+#     plt.plot(0, 0, 'or')
+#     plt.plot(0, acoustic_lens.d, 'or'   )
+#     plt.plot(pipeline.xout, pipeline.zout, 'k')
+#     plt.plot(pipeline.xint, pipeline.zint, 'k')
+#     plt.plot(acoustic_lens.xlens, acoustic_lens.zlens, 'k')
+#     plt.axis("equal")
+#     plt.grid(True)
+#     plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x:.1f}"))
+#     plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{1e3 * x:.1f}"))
+#     plt.xlabel("x-axis / (mm)")
+#     plt.ylabel("y-axis / (mm)")
+#     for iter, n in enumerate(range(transducer.num_elem)):
+#         if mode == 'NN':
+#             if iter == 0:
+#                 plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5, label="Transd. -> Lens")
+#                 plt.plot([x_lens[n], x_pipe[n]], [z_lens[n], z_pipe[n]], "C1", linewidth=.5, label="Lens -> Pipe")
+#                 plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C2", linewidth=.5, label="Pipe -> Focus")
+
+#                 # plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C3", linewidth=.5, label="Focus -> Pipe")
+#                 # plt.plot([x_pipe_2[n], x_lens_2[n]], [z_pipe_2[n], z_lens_2[n]], "C4", linewidth=.5, label="Pipe -> Lens")
+#                 # plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C5", linewidth=.5, label="Lens -> Transducer")
+#             else:
+#                 plt.plot([transducer.xt[n], x_lens[n]], [transducer.zt[n], z_lens[n]], "C0", linewidth=.5)
+#                 plt.plot([x_lens[n], x_pipe[n]], [z_lens[n], z_pipe[n]], "C1", linewidth=.5)
+#                 plt.plot([x_pipe[n], xf], [z_pipe[n], zf], "C2", linewidth=.5)
+
+#                 # plt.plot([xf, x_pipe_2[n]], [zf, z_pipe_2[n]], "C3", linewidth=.5)
+#                 # plt.plot([x_pipe_2[n], x_lens_2[n]], [z_pipe_2[n], z_lens_2[n]], "C4", linewidth=.5)
+#                 # plt.plot([x_lens_2[n], x_transd[n]], [z_lens_2[n], z_transd[n]], "C5", linewidth=.5)
+#     plt.plot(xf, zf, 'xr', label='Focus')
+#     plt.legend()
+#     plt.ylim(-5e-3, acoustic_lens.d + 5e-3)
+#     plt.show()
+
+# fmc_data = amps['final_amplitude'][:, 0, 0]
+# fmc_data_volta = amps['final_amplitude_volta'][:, 0, 0]
+
+# plt.figure()
+# plt.plot(np.arange(transducer.num_elem), fmc_data * fmc_data_volta, '-o', markersize=3)
+# plt.title(f"Transmission Loss - {mode} - with Impedance Matching" if has_impedance_matching else f"Transmission Loss - {mode} - without Impedance Matching")
+# plt.xlabel("Transducer Element")
+# plt.ylabel("Amplitude")
+# plt.grid(True)
+# plt.show()

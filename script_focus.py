@@ -55,8 +55,8 @@ transducer_no_matching = Transducer(pitch=.5e-3, bw=.4, num_elem=64, fc=5e6)
 transducer_no_matching.zt += acoustic_lens_no_matching.d
 
 # Raytracer engine to find time of flight between emitter and focus:
-raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
-raytracer_no_matching = RayTracing(acoustic_lens_no_matching, pipeline, transducer_no_matching, transmission_loss=True, directivity=True)
+raytracer = RayTracing(acoustic_lens, pipeline, transducer, final_amplitude=True, directivity=True)
+raytracer_no_matching = RayTracing(acoustic_lens_no_matching, pipeline, transducer_no_matching, final_amplitude=True, directivity=True)
 
 arg = (
     5e-3,
@@ -175,10 +175,10 @@ plt.show()
 # plt.ylabel("Time of Flight")
 # plt.grid(True)
 
-fmc_data = amps['transmission_loss'][:, 0, 0]
-fmc_data_with_refl = amps['transmission_loss_with_refl'][:, 0, 0]
-fmc_data_without_refl = amps['transmission_loss_without_refl'][:, 0, 0]
-fmc_data_no_matching = amps_no_matching['transmission_loss'][:, 0, 0]
+fmc_data = amps['final_amplitude'][:, 0, 0]
+fmc_data_with_refl = amps['final_amplitude_with_refl'][:, 0, 0]
+fmc_data_without_refl = amps['final_amplitude_without_refl'][:, 0, 0]
+fmc_data_no_matching = amps_no_matching['final_amplitude'][:, 0, 0]
 
 perpendicular_results_path = Path("./perpendicular_position_results")
 perpendicular_results_path.mkdir(parents=True, exist_ok=True)

@@ -45,7 +45,7 @@ num_elements = 12
 transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, fc=5e6)
 transducer.zt += acoustic_lens.d
 
-raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
+raytracer = RayTracing(acoustic_lens, pipeline, transducer, final_amplitude=True, directivity=True)
 
 focus_horizontal_offset = 4e-3
 
@@ -57,7 +57,7 @@ acoustic_lens_no_matching = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_
 pipeline_no_matching = Pipeline(outer_radius, wall_width, c3, rho_steel, xcenter=0, zcenter=-5e-3)
 transducer_no_matching = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, fc=5e6)
 transducer_no_matching.zt += acoustic_lens_no_matching.d
-raytracer_no_matching = RayTracing(acoustic_lens_no_matching, pipeline_no_matching, transducer_no_matching, transmission_loss=True, directivity=True)
+raytracer_no_matching = RayTracing(acoustic_lens_no_matching, pipeline_no_matching, transducer_no_matching, final_amplitude=True, directivity=True)
 
 arg_no_matching = (focus_horizontal_offset, pipeline_no_matching.inner_radius + 10e-3)
 arg_no_matching = rotate_point(arg_no_matching, theta_rad=0)
@@ -151,11 +151,11 @@ plt.ylim(-5e-3, acoustic_lens_no_matching.d + 5e-3)
 plt.tight_layout()
 plt.show()
 
-fmc_data = amps['transmission_loss'][:, 0, 0]
-fmc_data_with_refl = amps['transmission_loss_with_refl'][:, 0, 0]
-fmc_data_without_refl = amps['transmission_loss_without_refl'][:, 0, 0]
+fmc_data = amps['final_amplitude'][:, 0, 0]
+fmc_data_with_refl = amps['final_amplitude_with_refl'][:, 0, 0]
+fmc_data_without_refl = amps['final_amplitude_without_refl'][:, 0, 0]
 
-fmc_data_no_matching = amps_no_matching['transmission_loss'][:, 0, 0]
+fmc_data_no_matching = amps_no_matching['final_amplitude'][:, 0, 0]
 
 perpendicular_results_path = Path("./perpendicular_position_results")
 perpendicular_results_path.mkdir(parents=True, exist_ok=True)

@@ -49,7 +49,7 @@ for impedance_thickness in thickness_arr:
     transducer = Transducer(pitch=.5e-3, bw=.4, num_elem=num_elements, fc=5e6)
     transducer.zt += acoustic_lens.d
 
-    raytracer = RayTracing(acoustic_lens, pipeline, transducer, transmission_loss=True, directivity=True)
+    raytracer = RayTracing(acoustic_lens, pipeline, transducer, final_amplitude=True, directivity=True)
 
     focus_horizontal_offset = 4e-3
 
@@ -74,9 +74,9 @@ for impedance_thickness in thickness_arr:
 
     xf, zf = arg
 
-    fmc_data = amps['transmission_loss'][:, 0, 0]
-    fmc_data_with_refl = amps['transmission_loss_with_refl'][:, 0, 0]
-    fmc_data_without_refl = amps['transmission_loss_without_refl'][:, 0, 0]
+    fmc_data = amps['final_amplitude'][:, 0, 0]
+    fmc_data_with_refl = amps['final_amplitude_with_refl'][:, 0, 0]
+    fmc_data_without_refl = amps['final_amplitude_without_refl'][:, 0, 0]
 
     results.append(fmc_data)
 

@@ -11,12 +11,12 @@ FLOAT = np.float32
 
 
 class RayTracingSolver(ABC):
-    def __init__(self, acoustic_lens: AcousticLens, pipeline: Pipeline, transducer: Transducer, transmission_loss: bool= False, directivity: bool= False):
+    def __init__(self, acoustic_lens: AcousticLens, pipeline: Pipeline, transducer: Transducer, final_amplitude: bool= False, directivity: bool= False):
         self.transducer = transducer
         self.pipeline = pipeline
         self.acoustic_lens = acoustic_lens
 
-        self.transmission_loss = transmission_loss
+        self.final_amplitude = final_amplitude
         self.directivity = directivity
 
         self.c1 = self.c2 = self.c3 = None
@@ -41,13 +41,11 @@ class RayTracingSolver(ABC):
 
         if mode == 'NN':
             if self.acoustic_lens.impedance_matching is not None:
-                print('NN com camada')
                 tofs, amplitudes = self.get_tofs_NN(solution)
             else:
-                print('NN sem camada')
                 tofs, amplitudes = self.get_tofs_NN_without_imp(solution)
-        elif mode == 'RN':
-            tofs, amplitudes = self.get_tofs_NN(solution)
+        elif mode == 'RR':
+            tofs, amplitudes = self.get_tofs_RR(solution)
 
         return tofs, amplitudes, solution
 
@@ -63,7 +61,6 @@ class RayTracingSolver(ABC):
 
         for i in range(N_elem):
             results[i] = self._grid_search(xc[i], yc[i], xf, zf, mode, alpha_step, dist_tol, delta_alpha)
-            print(f'{i = }')
         return results
 
     def _grid_search(self, xc: float, yc: float, xf: np.ndarray, zf: np.ndarray, mode, alpha_step: float, tol: float, delta_alpha: float) -> dict:
@@ -75,7 +72,6 @@ class RayTracingSolver(ABC):
             if mode == 'NN':
                 if self.acoustic_lens.impedance_matching is not None:
                     # Compute distances for the coarse grid
-                    print('NN com camada')
                     dic_coarse_distances = self._dist_kernel_NN(
                         xc, yc,
                         x_target * np.ones_like(alpha_grid_coarse),
@@ -84,16 +80,15 @@ class RayTracingSolver(ABC):
                     )
                 else:
                     # Compute distances for the coarse grid
-                    print('NN sem camada')
                     dic_coarse_distances = self._dist_kernel_NN_without_imp(
                         xc, yc,
                         x_target * np.ones_like(alpha_grid_coarse),
                         y_target * np.ones_like(alpha_grid_coarse),
                         alpha_grid_coarse
                     )
-            elif mode == 'RN':
+            elif mode == 'RR':
                 # Compute distances for the coarse grid
-                dic_coarse_distances = self._dist_kernel_RN(
+                dic_coarse_distances = self._dist_kernel_RR(
                     xc, yc,
                     x_target * np.ones_like(alpha_grid_coarse),
                     y_target * np.ones_like(alpha_grid_coarse),
@@ -124,9 +119,9 @@ class RayTracingSolver(ABC):
                         y_target * np.ones_like(alpha_fine_subset),
                         alpha_fine_subset
                     )
-            elif mode == 'RN':
+            elif mode == 'RR':
                 # Compute distances on the fine grid subset
-                fine_distances = self._dist_kernel_RN(
+                fine_distances = self._dist_kernel_RR(
                     xc, yc,
                     x_target * np.ones_like(alpha_fine_subset),
                     y_target * np.ones_like(alpha_fine_subset),
@@ -142,9 +137,9 @@ class RayTracingSolver(ABC):
             else:
                 # Final evaluation with all optimal alphas
                 final_results = self._dist_kernel_NN_without_imp(xc, yc, xf, zf, alphaa)
-        elif mode == 'RN':
+        elif mode == 'RR':
             # Final evaluation with all optimal alphas
-            final_results = self._dist_kernel_RN(xc, yc, xf, zf, alphaa)
+            final_results = self._dist_kernel_RR(xc, yc, xf, zf, alphaa)
         final_results['firing_angle'] = alphaa
         # Set distances above tolerance to NaN
         final_results['dist'][final_results['dist'] >= tol] = np.nan
@@ -160,7 +155,11 @@ class RayTracingSolver(ABC):
         pass
 
     @abstractmethod
-    def _dist_kernel_RN(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):
+    def _dist_kernel_RR(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):
+        pass
+
+    @abstractmethod
+    def get_tofs_RR(self, solutions):
         pass
 
     @abstractmethod
