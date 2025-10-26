@@ -37,17 +37,46 @@ class RayTracingSolver(ABC):
 
     def solve(self, xf, zf, mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3):
         # Find focii TOF:
-        solution = self._solve(xf, zf, mode, alpha_step, dist_tol, delta_alpha)
 
-        if mode == 'NN':
-            if self.acoustic_lens.impedance_matching is not None:
-                tofs, amplitudes = self.get_tofs_NN(solution)
-            else:
-                tofs, amplitudes = self.get_tofs_NN_without_imp(solution)
-        elif mode == 'RR':
-            tofs, amplitudes = self.get_tofs_RR(solution)
+        if mode == 'RN':
+            # Para o modo RN (Refletido-Normal), precisamos de *ambos* os caminhos
+            # O 'solution_R' usa _dist_kernel_RR (baseado no 'mode')
+            # print("Resolvendo caminho 'R' (Ida)...")
+            solution_R = self._solve(xf, zf, 'RR', alpha_step, dist_tol, delta_alpha) 
+            
+            # O 'solution_N' usa _dist_kernel_NN (baseado no 'mode')
+            # print("Resolvendo caminho 'N' (Volta)...")
+            solution_N = self._solve(xf, zf, 'NN', alpha_step, dist_tol, delta_alpha)
+            
+            # print("Calculando TOFs e Amplitudes...")
+            # Passamos ambas as soluções para a função get_tofs
+            tofs, amplitudes = self.get_tofs_RN(solution_R, solution_N)
+            
+            # Retorna a solução 'R' como a principal para plotagem de raios
+            return tofs, amplitudes, solution_R
+        elif mode == 'NR':
+            # NR = Ida 'N' (para TOF e Amp Ida) + Volta 'R' (para Amp Volta)
+            # print("Resolvendo caminho 'N' (Ida)...")
+            solution_N = self._solve(xf, zf, 'NN', alpha_step, dist_tol, delta_alpha) # 'NN' resolve o caminho N
+            
+            # print("Resolvendo caminho 'R' (Volta)...")
+            solution_R = self._solve(xf, zf, 'RR', alpha_step, dist_tol, delta_alpha) # 'RR' resolve o caminho R
+            
+            # print("Calculando TOFs e Amplitudes...")
+            tofs, amplitudes = self.get_tofs_NR(solution_N, solution_R)
+            return tofs, amplitudes, solution_N # Retorna solution_N para plotagem
+        else:
+            solution = self._solve(xf, zf, mode, alpha_step, dist_tol, delta_alpha)
 
-        return tofs, amplitudes, solution
+            if mode == 'NN':
+                if self.acoustic_lens.impedance_matching is not None:
+                    tofs, amplitudes = self.get_tofs_NN(solution)
+                else:
+                    tofs, amplitudes = self.get_tofs_NN_without_imp(solution)
+            elif mode == 'RR':
+                tofs, amplitudes = self.get_tofs_RR(solution)
+
+            return tofs, amplitudes, solution
 
     def _grid_search_batch(self, xf: np.ndarray, zf: np.ndarray, mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3) -> list:
         '''Calls the function newton() one time for each transducer element.
@@ -94,6 +123,23 @@ class RayTracingSolver(ABC):
                     y_target * np.ones_like(alpha_grid_coarse),
                     alpha_grid_coarse
                 )
+            elif mode == 'RN':
+                # Compute distances for the coarse grid
+                dic_coarse_distances = self._dist_kernel_RR(
+                    xc, yc,
+                    x_target * np.ones_like(alpha_grid_coarse),
+                    y_target * np.ones_like(alpha_grid_coarse),
+                    alpha_grid_coarse
+                )
+            elif mode == 'NR':
+                # Compute distances for the coarse grid
+                dic_coarse_distances = self._dist_kernel_NN(
+                    xc, yc,
+                    x_target * np.ones_like(alpha_grid_coarse),
+                    y_target * np.ones_like(alpha_grid_coarse),
+                    alpha_grid_coarse
+                )
+
             # Find alpha minimizing distance on coarse grid
             alpha_coarse_min = alpha_grid_coarse[np.nanargmin(dic_coarse_distances['dist'])]
 
@@ -127,6 +173,23 @@ class RayTracingSolver(ABC):
                     y_target * np.ones_like(alpha_fine_subset),
                     alpha_fine_subset
                 )
+            elif mode == 'RN':
+                # Compute distances on the fine grid subset
+                fine_distances = self._dist_kernel_RR(
+                    xc, yc,
+                    x_target * np.ones_like(alpha_fine_subset),
+                    y_target * np.ones_like(alpha_fine_subset),
+                    alpha_fine_subset
+                )
+            elif mode == 'NR':
+                # Compute distances on the fine grid subset
+                fine_distances = self._dist_kernel_NN(
+                    xc, yc,
+                    x_target * np.ones_like(alpha_fine_subset),
+                    y_target * np.ones_like(alpha_fine_subset),
+                    alpha_fine_subset
+                )
+
             # Find alpha minimizing distance on fine grid subset
             alphaa[i] = alpha_fine_subset[np.nanargmin(fine_distances['dist'])]
 
@@ -140,6 +203,11 @@ class RayTracingSolver(ABC):
         elif mode == 'RR':
             # Final evaluation with all optimal alphas
             final_results = self._dist_kernel_RR(xc, yc, xf, zf, alphaa)
+        elif mode == 'RN':
+            final_results = self._dist_kernel_RR(xc, yc, xf, zf, alphaa)
+        elif mode == 'NR':
+            final_results = self._dist_kernel_NN(xc, yc, xf, zf, alphaa)            
+
         final_results['firing_angle'] = alphaa
         # Set distances above tolerance to NaN
         final_results['dist'][final_results['dist'] >= tol] = np.nan
@@ -168,4 +236,12 @@ class RayTracingSolver(ABC):
 
     @abstractmethod
     def get_tofs_NN_without_imp(self, solutions):
+        pass
+
+    @abstractmethod
+    def get_tofs_RN(self, solutions):
+        pass
+
+    @abstractmethod
+    def get_tofs_NR(self, solutions):
         pass

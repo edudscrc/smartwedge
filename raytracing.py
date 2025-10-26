@@ -267,7 +267,6 @@ class RayTracing(RayTracingSolver):
             'x_imp_refl_2': x_imp_refl_2, 'z_imp_refl_2': z_imp_refl_2,
             'x_pipe': x_pipe, 'z_pipe': z_pipe,
             'xf': xf, 'zf': zf,
-            'x_pipe_2': x_pipe_2, 'z_pipe_2': z_pipe_2,
 
             'dist': dist,
 
@@ -359,32 +358,45 @@ class RayTracing(RayTracingSolver):
                 ## VOLTA ##
                 ###########
 
-                # 4. Transmission: Focus -> Pipe Interface
+                # 6. Transmission: Focus -> Pipe Interface
                 # Steel -> Water : (Solid -> Fluid)
-                # Tpp_focus2pipe = solid2fluid_t_coeff(
-                #     solution[j]['interface_pipe2focus'][1][i], solution[j]['interface_pipe2focus'][0][i],
-                #     c3, c2, cs3,
-                #     self.pipeline.rho, self.acoustic_lens.rho2
-                # )
+                Tpp_focus2pipe_return = solid2fluid_t_coeff(
+                    solution[j]['interface_pipe2focus'][1][i], solution[j]['interface_pipe2focus'][0][i],
+                    c3, c2, cs3,
+                    self.pipeline.rho, self.acoustic_lens.rho2
+                )
 
-                # # 5. Transmission: Pipe Interface -> Impedance Interface
-                # # Water -> Impedance Matching : (Fluid -> Solid)
-                # Tpp_pipe2imp, _ = fluid2solid_t_coeff(
-                #     solution[j]['interface_imp2pipe'][1][i], solution[j]['interface_imp2pipe'][0][i],
-                #     c2, c_impedance, cs_impedance,
-                #     self.acoustic_lens.rho2, self.acoustic_lens.impedance_matching.rho
-                # )
+                # 7. Transmission: Pipe Interface -> Impedance Interface
+                # Water -> Impedance Matching : (Fluid -> Solid)
+                Tpp_pipe2imp_return, _ = fluid2solid_t_coeff(
+                    solution[j]['interface_imp2pipe'][1][i], solution[j]['interface_imp2pipe'][0][i],
+                    c2, c_impedance, cs_impedance,
+                    self.acoustic_lens.rho2, self.acoustic_lens.impedance_matching.rho
+                )
 
-                # # 6. Transmission: Impedance Interface -> Lens Interface
-                # # Impedance Matching -> Aluminum : (Solid -> Solid)
-                # Tpp_imp2lens, _ = solid2solid_tr_coeff(
-                #     solution[j]['interface_lens2imp'][1][i], solution[j]['interface_lens2imp'][0][i],
-                #     c_impedance, c1, cs_impedance, cs1,
-                #     self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
-                # )
+                # 8. Reflection
+                _, Rpp_lens2imp_return = solid2solid_tr_coeff(
+                    solution[j]['r_interface_lens2imp'][1][i], solution[j]['r_interface_lens2imp'][0][i],
+                    c_impedance, c1, cs_impedance, cs1,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
+                )
+
+                # 9. Reflection
+                Rpp_imp2lens_return = solid2fluid_r_coeff(
+                    solution[j]['r_interface_imp2lens'][1][i], solution[j]['r_interface_imp2lens'][0][i],
+                    c_impedance, cs_impedance, c2,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
+                )
+
+                # 10. Transmission
+                Tpp_lens2imp_return, _ = solid2solid_tr_coeff(
+                    solution[j]['interface_lens2imp'][1][i], solution[j]['interface_lens2imp'][0][i],
+                    c_impedance, c1, cs_impedance, cs1,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1 
+                )
 
                 amplitudes["final_amplitude"][j, :, i] = Tpp_lens2imp * Rpp_imp2lens * Rpp_lens2imp * Tpp_imp2pipe * Tpp_pipe2focus
-                # amplitudes["final_amplitude_volta"][j, :, i] = Tpp_focus2pipe * Tpp_pipe2imp * Tpp_imp2lens
+                amplitudes["final_amplitude_volta"][j, :, i] = Tpp_focus2pipe_return * Tpp_pipe2imp_return * Rpp_lens2imp_return * Rpp_imp2lens_return * Tpp_lens2imp_return
 
             if self.directivity:
                 theta = solution[j]['firing_angle'][i]
@@ -545,5 +557,289 @@ class RayTracing(RayTracingSolver):
         d3 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
 
         tofs = d1 / c1 + d2 / c2 + d3 / c3
+
+        return tofs, amplitudes
+
+    def get_tofs_RN(self, solution_R, solution_N):
+        """
+        Calcula os TOFs para o modo RN (Ida Refletida, Volta Normal).
+        O TOF (one-way) é calculado para o caminho 'R' (ida).
+        A amplitude 'final_amplitude' (ida) é do 'solution_R'.
+        A amplitude 'final_amplitude_volta' (volta) é do 'solution_N'.
+        """
+        n_elem = self.transducer.num_elem
+        n_focii = len(solution_R[0]['x_lens']) # Assume R e N têm os mesmos focos
+
+        c1, c2, c3 = self.get_speeds()
+
+        c_impedance = self.acoustic_lens.impedance_matching.p_wave_speed
+        cs_impedance = c_impedance / 2  
+        cs1 = c1 / 2
+        cs3 = c3 / 2
+
+        # Coordenadas do caminho 'R' (para o TOF)
+        coords_transducer = np.array([self.transducer.xt, self.transducer.zt]).T
+        coords_focus = np.array([solution_R[0]['xf'], solution_R[0]['zf']]).T
+        coords_lens = np.zeros((n_elem, 2, n_focii))
+        coords_imp = np.zeros((n_elem, 2, n_focii))
+        coords_lens_2 = np.zeros((n_elem, 2, n_focii))
+        coords_imp_2 = np.zeros((n_elem, 2, n_focii))
+        coords_pipe = np.zeros((n_elem, 2, n_focii))
+
+        amplitudes = {
+            "final_amplitude": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
+            "final_amplitude_volta": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
+            "directivity": np.ones((n_elem, n_elem, n_focii), dtype=np.float64)
+        }
+
+        for combined_idx in range(n_focii * n_elem):
+            i = combined_idx // n_elem
+            j = combined_idx % n_elem
+
+            # Extrai coordenadas do caminho 'R' (para o TOF)
+            coords_lens[j, 0, i], coords_lens[j, 1, i] = solution_R[j]['x_lens'][i], solution_R[j]['z_lens'][i]
+            coords_imp[j, 0, i], coords_imp[j, 1, i] = solution_R[j]['x_imp'][i], solution_R[j]['z_imp'][i]
+            coords_lens_2[j, 0, i], coords_lens_2[j, 1, i] = solution_R[j]['x_lens_refl_1'][i], solution_R[j]['z_lens_refl_1'][i]
+            coords_imp_2[j, 0, i], coords_imp_2[j, 1, i] = solution_R[j]['x_imp_refl_2'][i], solution_R[j]['z_imp_refl_2'][i]
+            coords_pipe[j, 0, i], coords_pipe[j, 1, i] = solution_R[j]['x_pipe'][i], solution_R[j]['z_pipe'][i]
+
+            # Corrigido: usa self.final_amplitude como definido no __init__
+            if self.final_amplitude:
+
+                #########
+                ## IDA (Reflected 'R' Path) - Usa solution_R
+                #########
+
+                # 1. Transmission: Lens Inteface -> Impedance Interface
+                Tpp_lens2imp, _ = solid2solid_tr_coeff(
+                    solution_R[j]['interface_lens2imp'][0][i], solution_R[j]['interface_lens2imp'][1][i],
+                    c1, c_impedance, cs1, cs_impedance,
+                    self.acoustic_lens.rho1, self.acoustic_lens.impedance_matching.rho
+                )
+
+                # 2. Reflection: Impedance Inteface -> Lens Interface
+                Rpp_imp2lens = solid2fluid_r_coeff(
+                    solution_R[j]['r_interface_imp2lens'][0][i], solution_R[j]['r_interface_imp2lens'][1][i],
+                    c_impedance, cs_impedance, c2,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
+                )
+
+                # 3. Reflection: Lens Inteface -> Impedance Interface
+                _, Rpp_lens2imp = solid2solid_tr_coeff(
+                    solution_R[j]['r_interface_lens2imp'][0][i], solution_R[j]['r_interface_lens2imp'][1][i],
+                    c_impedance, c1, cs_impedance, cs1,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
+                )
+
+                # 4. Transmission: Impedance Interface -> Pipe Interface
+                Tpp_imp2pipe = solid2fluid_t_coeff(
+                    solution_R[j]['interface_imp2pipe'][0][i], solution_R[j]['interface_imp2pipe'][1][i],
+                    c_impedance, c2, cs_impedance,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
+                )
+
+                # 5. Transmission: Pipe Interface -> Focus
+                Tpp_pipe2focus, _ = fluid2solid_t_coeff(
+                    solution_R[j]['interface_pipe2focus'][0][i], solution_R[j]['interface_pipe2focus'][1][i],
+                    c2, c3, cs3,
+                    self.acoustic_lens.rho2, self.pipeline.rho
+                )
+
+                ###########
+                ## VOLTA (Normal 'N' Path) - Usa solution_N
+                ###########
+                
+                # Pega os ângulos da solução 'N' (baseado na reciprocidade)
+                # O caminho de volta N (foco -> elem j) usa os mesmos ângulos
+                # do caminho de ida N (elem j -> foco) da solution_N
+
+                # 6. Transmission: Focus -> Pipe Interface
+                Tpp_focus2pipe = solid2fluid_t_coeff(
+                    solution_N[j]['interface_pipe2focus'][1][i], solution_N[j]['interface_pipe2focus'][0][i],
+                    c3, c2, cs3,
+                    self.pipeline.rho, self.acoustic_lens.rho2
+                )
+
+                # 7. Transmission: Pipe Interface -> Impedance Interface
+                Tpp_pipe2imp, _ = fluid2solid_t_coeff(
+                    solution_N[j]['interface_imp2pipe'][1][i], solution_N[j]['interface_imp2pipe'][0][i],
+                    c2, c_impedance, cs_impedance,
+                    self.acoustic_lens.rho2, self.acoustic_lens.impedance_matching.rho
+                )
+
+                # 8. Transmission: Impedance Interface -> Lens Interface
+                Tpp_imp2lens, _ = solid2solid_tr_coeff(
+                    solution_N[j]['interface_lens2imp'][1][i], solution_N[j]['interface_lens2imp'][0][i],
+                    c_impedance, c1, cs_impedance, cs1,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
+                )
+
+                # Atribui as amplitudes finais para cada caminho
+                amplitudes["final_amplitude"][j, :, i] = Tpp_lens2imp * Rpp_imp2lens * Rpp_lens2imp * Tpp_imp2pipe * Tpp_pipe2focus
+                amplitudes["final_amplitude_volta"][j, :, i] = Tpp_focus2pipe * Tpp_pipe2imp * Tpp_imp2lens
+
+            if self.directivity:
+                # NOTA: A diretividade de 'ida' usa o ângulo 'R'
+                # A diretividade de 'volta' deveria usar o ângulo 'N'
+                # A forma como o 'fmc_sim_kernel' está escrito
+                # complica isso. Por simplicidade, usamos o ângulo de 
+                # disparo do caminho de 'ida' (R) para o 'amplitudes["directivity"]'
+                # que é usado para AMBOS os caminhos em 'simulator.py'.
+                theta = solution_R[j]['firing_angle'][i]
+                k = self.transducer.fc * 2 * np.pi / self.acoustic_lens.c1
+                amplitudes["directivity"][j, :, i] *= far_field_directivity_solid(
+                    theta, c1, c1 / 2, k, self.transducer.element_width
+                )
+
+        # O TOF de ida (one-way) é o do caminho 'R'
+        coords_transducer_mat = np.tile(coords_transducer[:, :, np.newaxis], (1, 1, n_focii))
+        coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
+
+        d1_c1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
+        d2_c_imp = np.linalg.norm(coords_lens - coords_imp, axis=1)
+        d3_c_imp = np.linalg.norm(coords_imp - coords_lens_2, axis=1)
+        d4_c_imp = np.linalg.norm(coords_lens_2 - coords_imp_2, axis=1)
+        d5_c2 = np.linalg.norm(coords_imp_2 - coords_pipe, axis=1)
+        d6_c3 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
+
+        tofs = (d1_c1 / c1 + 
+                d2_c_imp / c_impedance + 
+                d3_c_imp / c_impedance + 
+                d4_c_imp / c_impedance + 
+                d5_c2 / c2 + 
+                d6_c3 / c3)
+
+        return tofs, amplitudes
+
+    def get_tofs_NR(self, solution_N, solution_R):
+        """
+        Calcula os TOFs para o modo NR (Ida Normal, Volta Refletida).
+        O TOF (one-way) é calculado para o caminho 'N' (ida) de solution_N.
+        A amplitude 'final_amplitude' (ida) é do 'solution_N'.
+        A amplitude 'final_amplitude_volta' (volta) é do 'solution_R'.
+        """
+        n_elem = self.transducer.num_elem
+        n_focii = len(solution_N[0]['x_lens']) # Usa solução 'N' como base
+
+        c1, c2, c3 = self.get_speeds()
+
+        c_impedance = self.acoustic_lens.impedance_matching.p_wave_speed
+        cs_impedance = c_impedance / 2  
+        cs1 = c1 / 2
+        cs3 = c3 / 2
+
+        # Coordenadas do caminho 'N' (para o TOF)
+        coords_transducer = np.array([self.transducer.xt, self.transducer.zt]).T
+        coords_focus = np.array([solution_N[0]['xf'], solution_N[0]['zf']]).T
+        coords_lens = np.zeros((n_elem, 2, n_focii))
+        coords_imp = np.zeros((n_elem, 2, n_focii))
+        coords_pipe = np.zeros((n_elem, 2, n_focii))
+        
+        amplitudes = {
+            "final_amplitude": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
+            "final_amplitude_volta": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
+            "directivity": np.ones((n_elem, n_elem, n_focii), dtype=np.float64)
+        }
+
+        for combined_idx in range(n_focii * n_elem):
+            i = combined_idx // n_elem
+            j = combined_idx % n_elem
+
+            # Extrai coordenadas do caminho 'N' (para o TOF)
+            coords_lens[j, 0, i], coords_lens[j, 1, i] = solution_N[j]['x_lens'][i], solution_N[j]['z_lens'][i]
+            coords_imp[j, 0, i], coords_imp[j, 1, i] = solution_N[j]['x_imp'][i], solution_N[j]['z_imp'][i]
+            coords_pipe[j, 0, i], coords_pipe[j, 1, i] = solution_N[j]['x_pipe'][i], solution_N[j]['z_pipe'][i]
+
+            # Corrigido: usa self.final_amplitude como definido no __init__
+            if self.final_amplitude:
+
+                #########
+                ## IDA (Normal 'N' Path) - Usa solution_N
+                ## Lógica de get_tofs_NN
+                #########
+
+                # 1. Transmission: Lens Inteface -> Impedance Interface
+                Tpp_lens2imp, _ = solid2solid_tr_coeff(
+                    solution_N[j]['interface_lens2imp'][0][i], solution_N[j]['interface_lens2imp'][1][i],
+                    c1, c_impedance, cs1, cs_impedance,
+                    self.acoustic_lens.rho1, self.acoustic_lens.impedance_matching.rho
+                )
+
+                # 2. Transmission: Impedance Inteface -> Pipe Interface
+                Tpp_imp2pipe = solid2fluid_t_coeff(
+                    solution_N[j]['interface_imp2pipe'][0][i], solution_N[j]['interface_imp2pipe'][1][i],
+                    c_impedance, c2, cs_impedance,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
+                )
+
+                # 3. Transmission: Pipe Interface -> Focus
+                Tpp_pipe2focus, _ = fluid2solid_t_coeff(
+                    solution_N[j]['interface_pipe2focus'][0][i], solution_N[j]['interface_pipe2focus'][1][i],
+                    c2, c3, cs3,
+                    self.acoustic_lens.rho2, self.pipeline.rho
+                )
+
+                ###########
+                ## VOLTA (Reflected 'R' Path) - Usa solution_R
+                ## Lógica de get_tofs_RR (volta)
+                ###########
+                
+                # 6. Transmission: Focus -> Pipe Interface
+                Tpp_focus2pipe_return = solid2fluid_t_coeff(
+                    solution_R[j]['interface_pipe2focus'][1][i], solution_R[j]['interface_pipe2focus'][0][i],
+                    c3, c2, cs3,
+                    self.pipeline.rho, self.acoustic_lens.rho2
+                )
+
+                # 7. Transmission: Pipe Interface -> Impedance Interface
+                Tpp_pipe2imp_return, _ = fluid2solid_t_coeff(
+                    solution_R[j]['interface_imp2pipe'][1][i], solution_R[j]['interface_imp2pipe'][0][i],
+                    c2, c_impedance, cs_impedance,
+                    self.acoustic_lens.rho2, self.acoustic_lens.impedance_matching.rho
+                )
+
+                # 8. Reflection
+                _, Rpp_lens2imp_return = solid2solid_tr_coeff(
+                    solution_R[j]['r_interface_lens2imp'][1][i], solution_R[j]['r_interface_lens2imp'][0][i],
+                    c_impedance, c1, cs_impedance, cs1,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1
+                )
+
+                # 9. Reflection
+                Rpp_imp2lens_return = solid2fluid_r_coeff(
+                    solution_R[j]['r_interface_imp2lens'][1][i], solution_R[j]['r_interface_imp2lens'][0][i],
+                    c_impedance, cs_impedance, c2,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho2
+                )
+
+                # 10. Transmission
+                Tpp_lens2imp_return, _ = solid2solid_tr_coeff(
+                    solution_R[j]['interface_lens2imp'][1][i], solution_R[j]['interface_lens2imp'][0][i],
+                    c_impedance, c1, cs_impedance, cs1,
+                    self.acoustic_lens.impedance_matching.rho, self.acoustic_lens.rho1 
+                )
+
+                # Atribui as amplitudes finais para cada caminho
+                amplitudes["final_amplitude"][j, :, i] = Tpp_lens2imp * Tpp_imp2pipe * Tpp_pipe2focus
+                amplitudes["final_amplitude_volta"][j, :, i] = Tpp_focus2pipe_return * Tpp_pipe2imp_return * Rpp_lens2imp_return * Rpp_imp2lens_return * Tpp_lens2imp_return
+
+            if self.directivity:
+                # Diretividade usa o ângulo 'N' (caminho de ida)
+                theta = solution_N[j]['firing_angle'][i]
+                k = self.transducer.fc * 2 * np.pi / self.acoustic_lens.c1
+                amplitudes["directivity"][j, :, i] *= far_field_directivity_solid(
+                    theta, c1, c1 / 2, k, self.transducer.element_width
+                )
+
+        # O TOF de ida (one-way) é o do caminho 'N'
+        coords_transducer_mat = np.tile(coords_transducer[:, :, np.newaxis], (1, 1, n_focii))
+        coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
+
+        d1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
+        d2 = np.linalg.norm(coords_lens - coords_imp, axis=1)
+        d3 = np.linalg.norm(coords_imp - coords_pipe, axis=1)
+        d4 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
+
+        tofs = d1 / c1 + d2 / c_impedance + d3 / c2 + d4 / c3 # TOF do caminho 'N'
 
         return tofs, amplitudes

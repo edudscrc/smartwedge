@@ -87,7 +87,7 @@ class Simulator:
         for i in prange(Nsim):
             ### final_amplitude_volta ###
             # tx_coeff_i = amplitudes['final_amplitude'][..., i]
-            # rx_coeff_i = amplitudes['final_amplitude_volta'][..., i].T
+            # rx_coeff_i = amplitudes['final_amplitude_volta'][..., i]
             # tofs_i = tofs[..., i]
             # tofs_i = np.tile(tofs_i[:, np.newaxis], reps=(1, Nel))
 
