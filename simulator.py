@@ -85,37 +85,8 @@ class Simulator:
         fmcs = np.zeros(shape=(Nt, Nel, Nel, Nsim), dtype=FLOAT)
 
         for i in prange(Nsim):
-            ### final_amplitude_volta ###
-            # tx_coeff_i = amplitudes['final_amplitude'][..., i]
-            # rx_coeff_i = amplitudes['final_amplitude_volta'][..., i]
-            # tofs_i = tofs[..., i]
-            # tofs_i = np.tile(tofs_i[:, np.newaxis], reps=(1, Nel))
-
-            ### directivity * final_amplitude ###
-            # tx_coeff_i = amplitudes['final_amplitude'][..., i]
-            # rx_coeff_i = amplitudes['directivity'][..., i] * amplitudes['final_amplitude'][..., i]
-            # tofs_i = tofs[..., i]
-            # tofs_i = np.tile(tofs_i[:, np.newaxis], reps=(1, Nel))
-
-            ### gemini ###
-            # 1. Extraia os vetores de amplitude e diretividade (shape N_elem,)
-            # Usamos [:, 0, i] porque get_tofs_NN armazena o valor do elemento 'j'
-            # em toda a linha [j, :, i]
-            tx_amp_vec = amplitudes['final_amplitude'][:, 0, i]
-            rx_amp_vec = amplitudes['final_amplitude_volta'][:, 0, i]
-            dir_vec = amplitudes['directivity'][:, 0, i]
-
-            # 2. Calcule o Coeficiente de Transmissão Total (depende do EMISSOR)
-            tx_total_vec = tx_amp_vec * dir_vec
-            # Crie uma matriz (N_elem, N_elem) onde cada LINHA é o coeff. do emissor
-            tx_coeff_i = np.tile(tx_total_vec[:, np.newaxis], (1, Nel))
-
-            # 3. Calcule o Coeficiente de Recepção Total (depende do RECEPTOR)
-            rx_total_vec = rx_amp_vec * dir_vec
-            # Crie uma matriz (N_elem, N_elem) onde cada COLUNA é o coeff. do receptor
-            rx_coeff_i = np.tile(rx_total_vec[np.newaxis, :], (Nel, 1))
-
-            # 4. Calcule os TOFs e chame o kernel
+            tx_coeff_i = amplitudes['final_amplitude'][..., i]
+            rx_coeff_i = amplitudes['directivity'][..., i] * amplitudes['final_amplitude_volta'][..., i]
             tofs_i = tofs[..., i]
             tofs_i = np.tile(tofs_i[:, np.newaxis], reps=(1, Nel))
 

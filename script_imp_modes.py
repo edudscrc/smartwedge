@@ -36,7 +36,7 @@ alpha_max = np.float32(np.pi / 4.0) # Maximum sectorial angle (rad)
 alpha_0 = np.float32(0.0)           # Reference angle (boundary condition) (rad)
 h0 = np.float32(91.03e-3 + 1e-3)    # Length h chosen at the reference angle (m)
 
-has_impedance_matching = False
+has_impedance_matching = True
 
 acoustic_lens = AcousticLens(c1, c2, d, alpha_max, alpha_0, h0, rho_aluminium, rho_water, impedance_matching=has_impedance_matching)
 
@@ -51,7 +51,7 @@ transducer.zt += acoustic_lens.d
 
 raytracer = RayTracing(acoustic_lens, pipeline, transducer, final_amplitude=True, directivity=True)
 
-mode = 'NN'
+mode = 'RR'
 
 # 1. DEFINE YOUR SCAN ANGLES AND FOCAL DEPTH
 # (Instead of just one 'arg')
