@@ -1,4 +1,5 @@
 import numpy as np
+import cupy as cp
 from abc import ABC, abstractmethod
 from bisect import bisect
 from scipy.optimize import minimize_scalar
@@ -79,7 +80,7 @@ class RayTracingSolver(ABC):
             return tofs, amplitudes, solution
 
     def _grid_search_batch(self, xf: np.ndarray, zf: np.ndarray, mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3) -> list:
-        '''Calls the function newton() one time for each transducer element.
+        '''Calls the function _grid_search one time for each transducer element.
       The set of angles found for a given element are used as initial guess for
       the next one. Starts from the center of the transducer.'''
 
@@ -88,131 +89,152 @@ class RayTracingSolver(ABC):
 
         results = [None] * N_elem
 
+        # Note: This loop over elements (N_elem) is difficult to vectorize
+        # without significant refactoring of the kernel functions.
+        # The main vectorization gain is from passing all xf, zf points at once.
         for i in range(N_elem):
+            print(f"  [Solver] Processing Element {i+1}/{N_elem} (xc = {xc[i]:.4f})...")
             results[i] = self._grid_search(xc[i], yc[i], xf, zf, mode, alpha_step, dist_tol, delta_alpha)
         return results
 
     def _grid_search(self, xc: float, yc: float, xf: np.ndarray, zf: np.ndarray, mode, alpha_step: float, tol: float, delta_alpha: float) -> dict:
-        alpha_grid_coarse = np.arange(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max + alpha_step, alpha_step)
-        alpha_grid_fine = np.arange(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max + alpha_step/10, alpha_step/10)
-        alphaa = np.zeros_like(xf)
+        # Coarse grid search remains the same, but on GPU
+        alpha_grid_coarse = cp.arange(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max + alpha_step, alpha_step)
+        
+        # We no longer need the fine grid
+        # alpha_grid_fine = np.arange(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max + alpha_step/10, alpha_step/10)
+        
+        # Convert main inputs to cupy arrays
+        xf_cp = cp.asarray(xf)
+        zf_cp = cp.asarray(zf)
+        
+        alphaa = cp.zeros_like(xf_cp)
+        num_focal_points = len(xf_cp)
 
-        for i, (x_target, y_target) in enumerate(zip(xf, zf)):
+        # This loop iterates over all focal points (e.g., 181 for delay laws, 51 for reflectors)
+        for i, (x_target, y_target) in enumerate(zip(xf, zf)): # Loop over CPU arrays
+            
+            # Print progress sparsely to avoid flooding the console
+            if (i+1) % 20 == 0 or i == 0 or i == num_focal_points - 1:
+                print(f"    [GridSearch] Element @ {xc:.4f}: Solving focal point {i+1}/{num_focal_points}...")
+
+            # --- 1. COARSE GRID SEARCH ---
+            # Find the approximate best angle using a vectorized coarse grid
+            
+            # Create cupy 1-element arrays for targets
+            x_target_cp = cp.array([x_target])
+            y_target_cp = cp.array([y_target])
+
             if mode == 'NN':
                 if self.acoustic_lens.impedance_matching is not None:
-                    # Compute distances for the coarse grid
                     dic_coarse_distances = self._dist_kernel_NN(
                         xc, yc,
-                        x_target * np.ones_like(alpha_grid_coarse),
-                        y_target * np.ones_like(alpha_grid_coarse),
+                        cp.ones_like(alpha_grid_coarse) * x_target_cp,
+                        cp.ones_like(alpha_grid_coarse) * y_target_cp,
                         alpha_grid_coarse
                     )
                 else:
-                    # Compute distances for the coarse grid
                     dic_coarse_distances = self._dist_kernel_NN_without_imp(
                         xc, yc,
-                        x_target * np.ones_like(alpha_grid_coarse),
-                        y_target * np.ones_like(alpha_grid_coarse),
+                        cp.ones_like(alpha_grid_coarse) * x_target_cp,
+                        cp.ones_like(alpha_grid_coarse) * y_target_cp,
                         alpha_grid_coarse
                     )
-            elif mode == 'RR':
-                # Compute distances for the coarse grid
+            elif mode == 'RR' or mode == 'RN':
                 dic_coarse_distances = self._dist_kernel_RR(
                     xc, yc,
-                    x_target * np.ones_like(alpha_grid_coarse),
-                    y_target * np.ones_like(alpha_grid_coarse),
-                    alpha_grid_coarse
-                )
-            elif mode == 'RN':
-                # Compute distances for the coarse grid
-                dic_coarse_distances = self._dist_kernel_RR(
-                    xc, yc,
-                    x_target * np.ones_like(alpha_grid_coarse),
-                    y_target * np.ones_like(alpha_grid_coarse),
+                    cp.ones_like(alpha_grid_coarse) * x_target_cp,
+                    cp.ones_like(alpha_grid_coarse) * y_target_cp,
                     alpha_grid_coarse
                 )
             elif mode == 'NR':
-                # Compute distances for the coarse grid
                 dic_coarse_distances = self._dist_kernel_NN(
                     xc, yc,
-                    x_target * np.ones_like(alpha_grid_coarse),
-                    y_target * np.ones_like(alpha_grid_coarse),
+                    cp.ones_like(alpha_grid_coarse) * x_target_cp,
+                    cp.ones_like(alpha_grid_coarse) * y_target_cp,
                     alpha_grid_coarse
                 )
 
-            # Find alpha minimizing distance on coarse grid
-            alpha_coarse_min = alpha_grid_coarse[np.nanargmin(dic_coarse_distances['dist'])]
+            # Find alpha minimizing distance on coarse grid (on GPU)
+            dist_coarse_cp = dic_coarse_distances['dist']
+            alpha_coarse_min_cp = alpha_grid_coarse[cp.nanargmin(dist_coarse_cp)]
+            # Get result back to CPU float for scipy optimizer
+            alpha_coarse_min = alpha_coarse_min_cp.item()
 
-            # Define fine grid search bounds around coarse minimum
-            fine_start_idx = bisect(alpha_grid_fine, alpha_coarse_min - delta_alpha)
-            fine_end_idx = bisect(alpha_grid_fine, alpha_coarse_min + delta_alpha)
-            alpha_fine_subset = alpha_grid_fine[fine_start_idx:fine_end_idx]
 
-            if mode == 'NN':
-                if self.acoustic_lens.impedance_matching is not None:
-                    # Compute distances on the fine grid subset
-                    fine_distances = self._dist_kernel_NN(
-                        xc, yc,
-                        x_target * np.ones_like(alpha_fine_subset),
-                        y_target * np.ones_like(alpha_fine_subset),
-                        alpha_fine_subset
-                    )
+            # --- 2. PRECISE OPTIMIZATION ---
+            # Use a numerical optimizer to find the *exact* minimum
+            # within a window around the coarse minimum.
+            
+            # Define the search bounds
+            search_bounds = (alpha_coarse_min - delta_alpha, alpha_coarse_min + delta_alpha)
+
+            # Define the objective function for the optimizer
+            # This function calculates the distance for a single alpha
+            def objective_func(alpha):
+                # alpha is a python float, convert to cupy array
+                alpha_arr = cp.array([alpha])
+                
+                if mode == 'NN':
+                    if self.acoustic_lens.impedance_matching is not None:
+                        dist_dict = self._dist_kernel_NN(xc, yc, x_target_cp, y_target_cp, alpha_arr)
+                    else:
+                        dist_dict = self._dist_kernel_NN_without_imp(xc, yc, x_target_cp, y_target_cp, alpha_arr)
+                elif mode == 'RR' or mode == 'RN':
+                    dist_dict = self._dist_kernel_RR(xc, yc, x_target_cp, y_target_cp, alpha_arr)
+                elif mode == 'NR':
+                    dist_dict = self._dist_kernel_NN(xc, yc, x_target_cp, y_target_cp, alpha_arr)
+                
+                # Return the scalar distance; handle NaNs
+                # .item() converts 0-dim cupy array to python float
+                dist = dist_dict['dist'][0].item() 
+                return dist if not np.isnan(dist) else 1e10 # Return large value for optimizer if NaN
+
+            # Run the bounded scalar minimizer (this is a CPU function)
+            try:
+                opt_result = minimize_scalar(
+                    objective_func, 
+                    bounds=search_bounds, 
+                    method='bounded' # Use 'bounded' to stay within the window
+                )
+                
+                if opt_result.success:
+                    alphaa[i] = opt_result.x # Assign float to cupy array element
                 else:
-                    # Compute distances on the fine grid subset
-                    fine_distances = self._dist_kernel_NN_without_imp(
-                        xc, yc,
-                        x_target * np.ones_like(alpha_fine_subset),
-                        y_target * np.ones_like(alpha_fine_subset),
-                        alpha_fine_subset
-                    )
-            elif mode == 'RR':
-                # Compute distances on the fine grid subset
-                fine_distances = self._dist_kernel_RR(
-                    xc, yc,
-                    x_target * np.ones_like(alpha_fine_subset),
-                    y_target * np.ones_like(alpha_fine_subset),
-                    alpha_fine_subset
-                )
-            elif mode == 'RN':
-                # Compute distances on the fine grid subset
-                fine_distances = self._dist_kernel_RR(
-                    xc, yc,
-                    x_target * np.ones_like(alpha_fine_subset),
-                    y_target * np.ones_like(alpha_fine_subset),
-                    alpha_fine_subset
-                )
-            elif mode == 'NR':
-                # Compute distances on the fine grid subset
-                fine_distances = self._dist_kernel_NN(
-                    xc, yc,
-                    x_target * np.ones_like(alpha_fine_subset),
-                    y_target * np.ones_like(alpha_fine_subset),
-                    alpha_fine_subset
-                )
+                    # Optimizer failed, fall back to coarse result
+                    alphaa[i] = alpha_coarse_min
+            except ValueError:
+                # Optimization can fail if coarse grid returns NaN or bounds are bad
+                alphaa[i] = alpha_coarse_min
 
-            # Find alpha minimizing distance on fine grid subset
-            alphaa[i] = alpha_fine_subset[np.nanargmin(fine_distances['dist'])]
-
+        # --- 3. FINAL EVALUATION ---
+        print(f"    [GridSearch] Element @ {xc:.4f}: Final vectorized kernel call for {num_focal_points} points...")
+        # All optimal alphas (alphaa) have been found.
+        # Now, call the kernel function *once* with the full cupy arrays.
         if mode == 'NN':
             if self.acoustic_lens.impedance_matching is not None:
-                # Final evaluation with all optimal alphas
-                final_results = self._dist_kernel_NN(xc, yc, xf, zf, alphaa)
+                final_results = self._dist_kernel_NN(xc, yc, xf_cp, zf_cp, alphaa)
             else:
-                # Final evaluation with all optimal alphas
-                final_results = self._dist_kernel_NN_without_imp(xc, yc, xf, zf, alphaa)
-        elif mode == 'RR':
-            # Final evaluation with all optimal alphas
-            final_results = self._dist_kernel_RR(xc, yc, xf, zf, alphaa)
-        elif mode == 'RN':
-            final_results = self._dist_kernel_RR(xc, yc, xf, zf, alphaa)
+                final_results = self._dist_kernel_NN_without_imp(xc, yc, xf_cp, zf_cp, alphaa)
+        elif mode == 'RR' or mode == 'RN':
+            final_results = self._dist_kernel_RR(xc, yc, xf_cp, zf_cp, alphaa)
         elif mode == 'NR':
-            final_results = self._dist_kernel_NN(xc, yc, xf, zf, alphaa)            
+            final_results = self._dist_kernel_NN(xc, yc, xf_cp, zf_cp, alphaa)            
 
         final_results['firing_angle'] = alphaa
         # Set distances above tolerance to NaN
-        final_results['dist'][final_results['dist'] >= tol] = np.nan
+        # Use cupy.where for safe assignment with NaN
+        final_results['dist'] = cp.where(final_results['dist'] >= tol, cp.nan, final_results['dist'])
 
-        return final_results
+        # Convert all cupy arrays in the dictionary back to numpy
+        final_results_cpu = {}
+        for key, value in final_results.items():
+            if isinstance(value, cp.ndarray):
+                final_results_cpu[key] = cp.asnumpy(value)
+            else:
+                final_results_cpu[key] = value # e.g., for 'interface_lens2imp' which is a list
+        
+        return final_results_cpu
 
     @abstractmethod
     def _dist_kernel_NN(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):

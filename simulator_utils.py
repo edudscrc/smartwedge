@@ -1,6 +1,7 @@
 from numpy import sqrt
 from numba import njit, prange
 import numpy as np
+import cupy as cp
 
 from numpy import ndarray
 
@@ -47,33 +48,45 @@ def numba_gausspulse(t, fc_Hz, bw, bwr=-6):
 
 def fmc2sscan(fmc_sims: ndarray, shifts_e, shifts_r, n_elem: int):
     # From a given FMC apply the delays and compute the Summed-Scan (S-Scan):
-    num_sims = fmc_sims.shape[-1]
-    num_elems = fmc_sims.shape[1]
-    num_samples = fmc_sims.shape[0]
-    num_laws = shifts_r.shape[1]
+    
+    # Move arrays to GPU
+    fmc_sims_cp = cp.asarray(fmc_sims)
+    shifts_e_cp = cp.asarray(shifts_e)
+    shifts_r_cp = cp.asarray(shifts_r)
+    
+    num_sims = fmc_sims_cp.shape[-1]
+    num_elems = fmc_sims_cp.shape[1]
+    num_samples = fmc_sims_cp.shape[0]
+    num_laws = shifts_r_cp.shape[1]
 
     print(f"{num_laws = }")
 
-    sscan = np.zeros(shape=(num_samples, num_laws, num_sims), dtype=FLOAT)
+    # Create sscan array on GPU
+    sscan = cp.zeros(shape=(num_samples, num_laws, num_sims), dtype=FLOAT)
     # signal_recepted_by_focus = np.zeros(shape=(num_samples, num_laws, num_sims), dtype=FLOAT)
     for scan_idx in range(num_laws):
-        print(f"{scan_idx} inside fmc2sscan loop")
+        # This print statement is slow as it requires CPU sync
+        # print(f"{scan_idx} inside fmc2sscan loop") 
+        if (scan_idx+1) % 20 == 0 or scan_idx == 0 or scan_idx == num_laws -1:
+             print(f"    [DAS] Processing S-Scan angle {scan_idx+1}/{num_laws}...")
 
         # Delay And Sum in emission:
-        shift_e = shifts_e[:, scan_idx]
-        rolled_fmc = np.zeros_like(fmc_sims)
+        shift_e = shifts_e_cp[:, scan_idx]
+        rolled_fmc = cp.zeros_like(fmc_sims_cp)
         for i in range(n_elem):
-            rolled_fmc[:, i, :, :] = np.roll(fmc_sims[:, i, :, :], int(shift_e[i]), axis=0)
-        das_emission = np.sum(rolled_fmc, axis=1)
+            rolled_fmc[:, i, :, :] = cp.roll(fmc_sims_cp[:, i, :, :], int(shift_e[i]), axis=0)
+        das_emission = cp.sum(rolled_fmc, axis=1)
         # signal_recepted_by_focus[:, scan_idx, :] = np.sum(das_emission, axis=1)
 
         # Delay And Sum in reception:
-        shift_r = shifts_r[:, scan_idx]
-        das = np.zeros_like(das_emission)
+        shift_r = shifts_r_cp[:, scan_idx]
+        das = cp.zeros_like(das_emission)
         for i in range(num_elems):
-            das[:, i, :] = np.roll(das_emission[:, i, :], int(shift_r[i]), axis=0)
-        ascan = np.sum(das, axis=1)
+            das[:, i, :] = cp.roll(das_emission[:, i, :], int(shift_r[i]), axis=0)
+        ascan = cp.sum(das, axis=1)
         sscan[:, scan_idx, :] = ascan
 
+    print(f"    [DAS] S-Scan calculation complete. Moving data back to CPU...")
     # return sscan, signal_recepted_by_focus
-    return sscan
+    # Move final result from GPU back to CPU
+    return cp.asnumpy(sscan)

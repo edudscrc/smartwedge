@@ -51,10 +51,9 @@ transducer.zt += acoustic_lens.d
 
 raytracer = RayTracing(acoustic_lens, pipeline, transducer, final_amplitude=True, directivity=True)
 
-mode = "RR"
+mode = "NN"
 
 # 1. DEFINE YOUR SCAN ANGLES AND FOCAL DEPTH
-# (Instead of just one 'arg')
 # -----------------------------------------------------------------
 num_angles = 181  # Or however many lines you want in your S-Scan
 alpha_max_scan = np.pi / 4.0
@@ -65,35 +64,44 @@ scan_angles = np.linspace(alpha_min_scan, alpha_max_scan, num_angles)
 focal_radius = pipeline.inner_radius + 10e-3
 center_elem = transducer.num_elem // 2
 
-# Initialize empty delay law matrices
-all_delay_laws = np.zeros((transducer.num_elem, num_angles), dtype=np.float32)
 
 print("Calculating delay laws for S-Scan...")
-# 2. LOOP THROUGH EACH ANGLE AND CALCULATE DELAYS
+# 2. VECTORIZED DELAY LAW CALCULATION (REMOVED LOOP)
 # -----------------------------------------------------------------
-for i, angle_rad in enumerate(scan_angles):
-    print(f"Solving {i}/{num_angles - 1}")
-    # Calculate the (x, z) coordinate for the focal point at this angle
-    xf = focal_radius * np.sin(angle_rad)
-    zf = focal_radius * np.cos(angle_rad)
 
-    # Apply the same rotation and centering as you did for 'arg'
-    xf_rot, zf_rot = rotate_point((xf, zf), theta_rad=0)
-    xf_final = xf_rot + pipeline.xcenter
-    zf_final = zf_rot + pipeline.zcenter
+# Calculate all (x, z) coordinates for all focal points at once
+xf = focal_radius * np.sin(scan_angles)
+zf = focal_radius * np.cos(scan_angles)
 
-    # Solve for the TOFs to this one point
-    # Note: We only need 'tofs', so we ignore amps and sol
-    tofs_i, _, _ = raytracer.solve(xf_final, zf_final, mode=mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3)
+# Apply rotation and centering to all points
+xf_rot, zf_rot = rotate_point((xf, zf), theta_rad=0)
+xf_final = xf_rot + pipeline.xcenter
+zf_final = zf_rot + pipeline.zcenter
 
-    # Calculate the delay law relative to the center element
-    # tofs_i has shape (64, 1), so we use [:, 0] to get a (64,) array
-    delay_law_i = tofs_i[center_elem, 0] - tofs_i[:, 0]
+# Solve for ALL angles in a single call
+# We can use a more precise alpha_step and stricter tolerance now
+# without a huge performance hit, thanks to vectorization.
+#
+# alpha_step=1e-4: Coarse grid step.
+# dist_tol=1.0:   Stricter error tolerance (1.0 mm distance error).
+# delta_alpha=0.1: Window for the optimizer (radians).
+print(f"--- [1/5] Calculating S-Scan Delay Laws ---")
+print(f"Solving for {num_angles} angles simultaneously...")
+tofs, _, _ = raytracer.solve(xf_final, zf_final, mode=mode, 
+                             alpha_step=1e-4, 
+                             dist_tol=1.0, 
+                             delta_alpha=0.1)
 
-    # Store this delay law as one column in our matrix
-    all_delay_laws[:, i] = delay_law_i
+# 'tofs' will have shape (num_elem, num_angles), e.g., (64, 181)
 
-print("Delay law calculation complete.")
+# Calculate the delay law relative to the center element using broadcasting
+# tofs[center_elem, :] has shape (181,)
+# tofs has shape (64, 181)
+# Result 'all_delay_laws' has shape (64, 181)
+all_delay_laws = tofs[center_elem, :] - tofs
+
+print("--- [2/5] Delay Law Calculation Complete ---")
+
 
 # 3. USE THE NEW DELAY LAW MATRIX IN THE SIMULATOR
 # -----------------------------------------------------------------
@@ -103,36 +111,35 @@ simulation_parameters = {
     "gate_start": 30e-6,
     "fs": 64.5e6,  # Hz
     "response_type": "s-scan",
-    "emission_delaylaw": all_delay_laws,  # <-- USE THE FULL MATRIX
-    "reception_delaylaw": all_delay_laws,  # <-- USE THE FULL MATRIX
+    "emission_delaylaw": all_delay_laws,  # <-- USE THE FULL (64, 181) MATRIX
+    "reception_delaylaw": all_delay_laws,  # <-- USE THE FULL (64, 181) MATRIX
 }
 
 sim = Simulator(simulation_parameters, [raytracer], verbose=True)
 
 # 4. ADD THE REFLECTOR YOU WANT TO IMAGE
-# (This can be the same 'arg' as before)
 # -----------------------------------------------------------------
 focus_radius = pipeline.inner_radius
-focus_angle = np.linspace(alpha_min_scan, alpha_max_scan, 50)
-xf, zf = focus_radius * np.sin(focus_angle), focus_radius * np.cos(focus_angle)
+focus_angle = np.linspace(alpha_min_scan, alpha_max_scan, 11)
+xf_reflectors, zf_reflectors = focus_radius * np.sin(focus_angle), focus_radius * np.cos(focus_angle)
 
-# focus_horizontal_offset = 6e-3
-# arg = (
-#     focus_horizontal_offset,
-#     pipeline.inner_radius + 10e-3,
-# )
-# arg = rotate_point(arg, theta_rad=0)
-# arg = (arg[0] + pipeline.xcenter, arg[1] + pipeline.zcenter)
-arg = (xf, zf)
+arg = (xf_reflectors, zf_reflectors)
+print(f"--- [3/5] Adding {len(xf_reflectors)} Reflectors ---")
 sim.add_reflector(*arg, different_instances=True)
 
 # 5. GET THE RESPONSE AND PLOT
 # -----------------------------------------------------------------
-sscan = sim.get_response(mode)
+print(f"--- [4/5] Running Main Simulation (Mode: {mode}) ---")
+# Pass the same high-precision parameters to the simulation run
+sscan = sim.get_response(mode, 
+                         alpha_step=1e-4, 
+                         dist_tol=1.0,
+                         delta_alpha=0.1)
 
 aux_filename = "with_imp" if has_impedance_matching else "no_imp"
 
-print(sscan.shape)
+print(f"--- [5/5] Simulation Complete. Saving data... ---")
+print(f"Final S-Scan shape: {sscan.shape}")
 
 np.save(f"{mode}_{aux_filename}.npy", sscan)
 
@@ -166,3 +173,5 @@ aux_title = "With impedance matching" if has_impedance_matching else "Without im
 # plt.title(f"(Log Scale) S-Scan | Mode {mode} | {aux_title} | Max. value: {np.amax(sscan_env):.2f}")
 # # plt.title(f"(Log Scale) S-Scan | Sum of all modes with Imp. Matching | Max. value: {np.amax(sscan_env):.2f}")
 # plt.show()
+
+print("--- Process Finished ---")

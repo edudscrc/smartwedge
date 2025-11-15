@@ -1,5 +1,5 @@
 import numpy as np
-
+import cupy as cp
 from numba import prange
 
 from raytracing_solver import RayTracingSolver
@@ -62,7 +62,7 @@ class Simulator:
             }
             self.sim_list.append(sim)
 
-    def __simulate(self, mode):
+    def __simulate(self, mode, alpha_step, dist_tol, delta_alpha):
         Nel = self.transducer.num_elem
         Nt = len(self.tspan)
         Nsim = len(self.sim_list)
@@ -70,24 +70,39 @@ class Simulator:
 
         for i, raytracer in enumerate(self.raytracer_list):
             if self.verbose:
-                print(f"Raytracer running: {i + 1}/{len(self.raytracer_list)}")
+                print(f"  [Simulator] Simulating mode '{mode}'. Raytracer {i+1}/{len(self.raytracer_list)}...")
             if isinstance(raytracer, RayTracingSolver) and self.surface_echoes:
-                self.fmcs += self._simulate_focus_raytracer(raytracer, mode)  # or handle it appropriately
+                self.fmcs += self._simulate_focus_raytracer(raytracer, mode, alpha_step, dist_tol, delta_alpha)
             else:
                 raise NotImplementedError(f"Unknown raytracer type: {type(raytracer)}")
 
-    def _simulate_focus_raytracer(self, focus_raytracer: RayTracing, mode):
+    def _simulate_focus_raytracer(self, focus_raytracer: RayTracing, mode, alpha_step, dist_tol, delta_alpha):
         Nel = focus_raytracer.transducer.num_elem
         Nt = len(self.tspan)
         Nsim = len(self.sim_list)
 
-        tofs, amplitudes, _ = focus_raytracer.solve(self.xf, self.zf, mode=mode)
+        # Pass the solver parameters from the get_response() call
+        print(f"    [Sim.Kernel] Solving rays for {Nsim} reflectors (Mode: {mode})...")
+        # solve() now returns cupy arrays for tofs and amplitudes dict
+        tofs_cp, amplitudes_cp, _ = focus_raytracer.solve(
+            self.xf, self.zf, mode=mode, 
+            alpha_step=alpha_step, 
+            dist_tol=dist_tol,
+            delta_alpha=delta_alpha
+        )
+        
+        # Convert results from CuPy back to NumPy for Numba kernel
+        print(f"    [Sim.Kernel] Moving raytracing results from GPU to CPU...")
+        tofs_np = cp.asnumpy(tofs_cp)
+        amplitudes_np = {k: cp.asnumpy(v) for k, v in amplitudes_cp.items()}
+
         fmcs = np.zeros(shape=(Nt, Nel, Nel, Nsim), dtype=FLOAT)
 
+        print(f"    [Sim.Kernel] Ray tracing complete. Applying FMC kernel for {Nsim} reflectors...")
         for i in prange(Nsim):
-            tx_coeff_i = amplitudes['final_amplitude'][..., i]
-            rx_coeff_i = amplitudes['directivity'][..., i] * amplitudes['final_amplitude_volta'][..., i]
-            tofs_i = tofs[..., i]
+            tx_coeff_i = amplitudes_np['final_amplitude'][..., i]
+            rx_coeff_i = amplitudes_np['directivity'][..., i] * amplitudes_np['final_amplitude_volta'][..., i]
+            tofs_i = tofs_np[..., i]
             tofs_i = np.tile(tofs_i[:, np.newaxis], reps=(1, Nel))
 
             fmcs[..., i] = fmc_sim_kernel(
@@ -96,10 +111,13 @@ class Simulator:
                 tx_coeff_i, rx_coeff_i,
                 Nel, focus_raytracer.transducer.fc, focus_raytracer.transducer.bw
             )
+        
+        print(f"    [Sim.Kernel] FMC kernel complete.")
         return fmcs
 
-    def __get_sscan(self, mode):
-        self.fmcs = self.__get_fmc(mode)
+    def __get_sscan(self, mode, alpha_step, dist_tol, delta_alpha):
+        self.fmcs = self.__get_fmc(mode, alpha_step, dist_tol, delta_alpha)
+        print(f"  [Simulator] Applying Delay-and-Sum for S-Scan...")
         self.sscans = fmc2sscan(
             self.fmcs,
             self.shifts_e,
@@ -108,21 +126,23 @@ class Simulator:
         )
         return self.sscans
 
-    def __get_fmc(self, mode):
+    def __get_fmc(self, mode, alpha_step, dist_tol, delta_alpha):
         if self.fmcs is None:
-            self.__simulate(mode)
+            self.__simulate(mode, alpha_step, dist_tol, delta_alpha)
         return self.fmcs
 
-    def get_response(self, mode):
+    def get_response(self, mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3):
         if len(self.sim_list) == 0:
             raise ValueError("No reflector set. You must add at least one reflector to simulate its response.")
 
         match self.response_type:
             case "s-scan":
-                return self.__get_sscan(mode)
+                # Pass parameters down
+                return self.__get_sscan(mode, alpha_step, dist_tol, delta_alpha)
 
             case "fmc":
-                return self.__get_fmc(mode)
+                # Pass parameters down
+                return self.__get_fmc(mode, alpha_step, dist_tol, delta_alpha)
 
             case _:
                 raise NotImplementedError

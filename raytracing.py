@@ -1,4 +1,5 @@
 import numpy as np
+import cupy as cp
 from numpy import ndarray
 from numpy.linalg import norm
 from raytracing_utils import roots_bhaskara, snell, uhp, reflection
@@ -31,12 +32,14 @@ class RayTracing(RayTracingSolver):
 
         # Coords. in Lens (Transducer Interface -> Lens Interface)
         x_lens, z_lens = self.acoustic_lens.xy_from_alpha(acurve)
-        gamma_1 = np.arctan2((z_lens - zc), (x_lens - xc))
-        gamma_1 = gamma_1 + (gamma_1 < 0) * np.pi
+        # Use cupy for arctan2, pi
+        gamma_1 = cp.arctan2((z_lens - zc), (x_lens - xc))
+        gamma_1 = gamma_1 + (gamma_1 < 0) * cp.pi
 
         # Lens Interface -> Impedance Interface
         gamma_2, inc_2, ref_2 = snell(c1, c_impedance, gamma_1, self.acoustic_lens.dydx_from_alpha(acurve))
-        a_2 = np.tan(uhp(gamma_2))
+        # Use cupy for tan
+        a_2 = cp.tan(uhp(gamma_2))
         b_2 = z_lens - a_2 * x_lens
         alpha_2 = findIntersectionBetweenImpedanceMatchingAndRay_fast(a_2, b_2, self.acoustic_lens)
         # Coords. in Impedance
@@ -44,7 +47,8 @@ class RayTracing(RayTracingSolver):
 
         # Impedance Interface -> Pipe Interface
         gamma_3, inc_3, ref_3 = snell(c_impedance, c2, gamma_2, self.acoustic_lens.dydx_from_alpha(alpha_2, thickness=impedance_thickness))
-        a_3 = np.tan(uhp(gamma_3))
+        # Use cupy for tan
+        a_3 = cp.tan(uhp(gamma_3))
         b_3 = z_imp - a_3 * x_imp
         aux_a_3 = a_3**2 + 1
         aux_b_3 = 2 * a_3 * b_3 - 2 * (self.pipeline.xcenter + a_3 * self.pipeline.zcenter)
@@ -58,13 +62,21 @@ class RayTracing(RayTracingSolver):
 
         # Pipe Interface -> Focus
         gamma_4, inc_4, ref_4 = snell(c2, c3, gamma_3, self.pipeline.dydx(x_pipe))
-        a_4 = np.tan(gamma_4)
-        b_4 = z_pipe - a_4 * x_pipe
-        aux_a_4 = -1 / a_4
-        aux_b_4 = zf - aux_a_4 * xf
-        # Coords. in Focus
-        x_found_focus = (aux_b_4 - b_4) / (a_4 - aux_a_4)
-        z_found_focus = a_4 * x_found_focus + b_4
+        
+        # --- START FIX: Numerically Stable Ray Calculation ---
+        # The previous method using cp.tan(gamma_4) and -1/a_4 fails for
+        # vertical rays (gamma_4 = +/- pi/2), which occurs at angle = 0.
+        # This new method is stable for all angles.
+        sin_g4 = cp.sin(gamma_4)
+        cos_g4 = cp.cos(gamma_4)
+        sin2_g4 = sin_g4**2
+        cos2_g4 = cos_g4**2
+        sincos_g4 = sin_g4 * cos_g4
+
+        # Coords. in Focus (intersection of ray and its normal from target)
+        x_found_focus = sincos_g4 * (zf - z_pipe) + sin2_g4 * x_pipe + cos2_g4 * xf
+        z_found_focus = sin2_g4 * zf + cos2_g4 * z_pipe - sincos_g4 * (x_pipe - xf)
+        # --- END FIX ---
 
         # Distance between computed ray and focus
         dist = (x_found_focus - xf)**2 + (z_found_focus - zf)**2
@@ -94,22 +106,25 @@ class RayTracing(RayTracingSolver):
         cs1 = c1 / 2
         cs3 = c3 / 2
 
-        coords_transducer = np.array([self.transducer.xt, self.transducer.zt]).T
-        coords_focus = np.array([solution[0]['xf'], solution[0]['zf']]).T
-        coords_lens = np.zeros((n_elem, 2, n_focii))
-        coords_imp = np.zeros((n_elem, 2, n_focii))
-        coords_pipe = np.zeros((n_elem, 2, n_focii))
+        # Convert to cupy arrays for GPU calculation
+        coords_transducer = cp.asarray(np.array([self.transducer.xt, self.transducer.zt]).T)
+        # solution[0] contains numpy arrays, convert them
+        coords_focus = cp.asarray(np.array([solution[0]['xf'], solution[0]['zf']]).T)
+        coords_lens = cp.zeros((n_elem, 2, n_focii))
+        coords_imp = cp.zeros((n_elem, 2, n_focii))
+        coords_pipe = cp.zeros((n_elem, 2, n_focii))
 
         amplitudes = {
-            "final_amplitude": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "final_amplitude_volta": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "directivity": np.ones((n_elem, n_elem, n_focii), dtype=np.float64)
+            "final_amplitude": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "final_amplitude_volta": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "directivity": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64)
         }
 
         for combined_idx in range(n_focii * n_elem):
             i = combined_idx // n_elem
             j = combined_idx % n_elem
 
+            # Data is numpy, assign to cupy arrays
             coords_lens[j, 0, i], coords_lens[j, 1, i] = solution[j]['x_lens'][i], solution[j]['z_lens'][i]
             coords_imp[j, 0, i], coords_imp[j, 1, i] = solution[j]['x_imp'][i], solution[j]['z_imp'][i]
             coords_pipe[j, 0, i], coords_pipe[j, 1, i] = solution[j]['x_pipe'][i], solution[j]['z_pipe'][i]
@@ -182,13 +197,14 @@ class RayTracing(RayTracingSolver):
                     theta, c1, c1 / 2, k, self.transducer.element_width
                 )
 
-        coords_transducer_mat = np.tile(coords_transducer[:, :, np.newaxis], (1, 1, n_focii))
-        coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
+        # Use cupy for tile and linalg.norm
+        coords_transducer_mat = cp.tile(coords_transducer[:, :, cp.newaxis], (1, 1, n_focii))
+        coords_focus_mat = cp.tile(coords_focus[:, :, cp.newaxis], (1, 1, n_elem))
 
-        d1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
-        d2 = np.linalg.norm(coords_lens - coords_imp, axis=1)
-        d3 = np.linalg.norm(coords_imp - coords_pipe, axis=1)
-        d4 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
+        d1 = cp.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
+        d2 = cp.linalg.norm(coords_lens - coords_imp, axis=1)
+        d3 = cp.linalg.norm(coords_imp - coords_pipe, axis=1)
+        d4 = cp.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
 
         tofs = d1 / c1 + d2 / c_impedance + d3 / c2 + d4 / c3
 
@@ -206,12 +222,14 @@ class RayTracing(RayTracingSolver):
 
         # Coords. in Lens (Transducer Interface -> Lens Interface)
         x_lens, z_lens = self.acoustic_lens.xy_from_alpha(acurve)
-        gamma_1 = np.arctan2((z_lens - zc), (x_lens - xc))
-        gamma_1 = gamma_1 + (gamma_1 < 0) * np.pi
+        # Use cupy for arctan2, pi
+        gamma_1 = cp.arctan2((z_lens - zc), (x_lens - xc))
+        gamma_1 = gamma_1 + (gamma_1 < 0) * cp.pi
 
         # Lens Interface -> Impedance Interface
         gamma_2, inc_2, ref_2 = snell(c1, c_impedance, gamma_1, self.acoustic_lens.dydx_from_alpha(acurve))
-        a_2 = np.tan(uhp(gamma_2))
+        # Use cupy for tan
+        a_2 = cp.tan(uhp(gamma_2))
         b_2 = z_lens - a_2 * x_lens
         alpha_2 = findIntersectionBetweenImpedanceMatchingAndRay_fast(a_2, b_2, self.acoustic_lens)
         # Coords. in Impedance
@@ -219,7 +237,8 @@ class RayTracing(RayTracingSolver):
 
         # Impedance Interface -> Lens Interface
         gamma_refl_1, _, inc_refl_1, ref_refl_1 = reflection(gamma_2, self.acoustic_lens.dydx_from_alpha(alpha_2, thickness=impedance_thickness))
-        a_refl_1 = np.tan(uhp(gamma_refl_1))
+        # Use cupy for tan
+        a_refl_1 = cp.tan(uhp(gamma_refl_1))
         b_refl_1 = z_imp - a_refl_1 * x_imp
         alpha_refl_1 = findIntersectionBetweenAcousticLensAndRay_fast(a_refl_1, b_refl_1, self.acoustic_lens)
         # Coords. in Lens
@@ -227,7 +246,8 @@ class RayTracing(RayTracingSolver):
 
         # Lens Interface -> Impedance Interface
         gamma_refl_2, _, inc_refl_2, ref_refl_2 = reflection(gamma_refl_1, self.acoustic_lens.dydx_from_alpha(alpha_refl_1))
-        a_refl_2 = np.tan(uhp(gamma_refl_2))
+        # Use cupy for tan
+        a_refl_2 = cp.tan(uhp(gamma_refl_2))
         b_refl_2 = z_lens_refl_1 - a_refl_2 * x_lens_refl_1
         alpha_refl_2 = findIntersectionBetweenImpedanceMatchingAndRay_fast(a_refl_2, b_refl_2, self.acoustic_lens)
         # Coords. in Impedance
@@ -235,7 +255,8 @@ class RayTracing(RayTracingSolver):
 
         # Impedance Interface -> Pipe Interface
         gamma_3, inc_3, ref_3 = snell(c_impedance, c2, gamma_refl_2, self.acoustic_lens.dydx_from_alpha(alpha_refl_2, thickness=impedance_thickness))
-        a_3 = np.tan(uhp(gamma_3))
+        # Use cupy for tan
+        a_3 = cp.tan(uhp(gamma_3))
         b_3 = z_imp_refl_2 - a_3 * x_imp_refl_2
         aux_a_3 = a_3**2 + 1
         aux_b_3 = 2 * a_3 * b_3 - 2 * (self.pipeline.xcenter + a_3 * self.pipeline.zcenter)
@@ -249,13 +270,18 @@ class RayTracing(RayTracingSolver):
 
         # Pipe Interface -> Focus
         gamma_4, inc_4, ref_4 = snell(c2, c3, gamma_3, self.pipeline.dydx(x_pipe))
-        a_4 = np.tan(gamma_4)
-        b_4 = z_pipe - a_4 * x_pipe
-        aux_a_4 = -1 / a_4
-        aux_b_4 = zf - aux_a_4 * xf
-        # Coords. in Focus
-        x_found_focus = (aux_b_4 - b_4) / (a_4 - aux_a_4)
-        z_found_focus = a_4 * x_found_focus + b_4
+        
+        # --- START FIX: Numerically Stable Ray Calculation ---
+        sin_g4 = cp.sin(gamma_4)
+        cos_g4 = cp.cos(gamma_4)
+        sin2_g4 = sin_g4**2
+        cos2_g4 = cos_g4**2
+        sincos_g4 = sin_g4 * cos_g4
+
+        # Coords. in Focus (intersection of ray and its normal from target)
+        x_found_focus = sincos_g4 * (zf - z_pipe) + sin2_g4 * x_pipe + cos2_g4 * xf
+        z_found_focus = sin2_g4 * zf + cos2_g4 * z_pipe - sincos_g4 * (x_pipe - xf)
+        # --- END FIX ---
 
         # Distance between computed ray and focus
         dist = (x_found_focus - xf)**2 + (z_found_focus - zf)**2
@@ -288,24 +314,26 @@ class RayTracing(RayTracingSolver):
         cs1 = c1 / 2
         cs3 = c3 / 2
 
-        coords_transducer = np.array([self.transducer.xt, self.transducer.zt]).T
-        coords_focus = np.array([solution[0]['xf'], solution[0]['zf']]).T
-        coords_lens = np.zeros((n_elem, 2, n_focii))
-        coords_imp = np.zeros((n_elem, 2, n_focii))
-        coords_lens_2 = np.zeros((n_elem, 2, n_focii))
-        coords_imp_2 = np.zeros((n_elem, 2, n_focii))
-        coords_pipe = np.zeros((n_elem, 2, n_focii))
+        # Convert to cupy arrays for GPU calculation
+        coords_transducer = cp.asarray(np.array([self.transducer.xt, self.transducer.zt]).T)
+        coords_focus = cp.asarray(np.array([solution[0]['xf'], solution[0]['zf']]).T)
+        coords_lens = cp.zeros((n_elem, 2, n_focii))
+        coords_imp = cp.zeros((n_elem, 2, n_focii))
+        coords_lens_2 = cp.zeros((n_elem, 2, n_focii))
+        coords_imp_2 = cp.zeros((n_elem, 2, n_focii))
+        coords_pipe = cp.zeros((n_elem, 2, n_focii))
 
         amplitudes = {
-            "final_amplitude": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "final_amplitude_volta": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "directivity": np.ones((n_elem, n_elem, n_focii), dtype=np.float64)
+            "final_amplitude": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "final_amplitude_volta": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "directivity": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64)
         }
 
         for combined_idx in range(n_focii * n_elem):
             i = combined_idx // n_elem
             j = combined_idx % n_elem
 
+            # Data is numpy, assign to cupy arrays
             coords_lens[j, 0, i], coords_lens[j, 1, i] = solution[j]['x_lens'][i], solution[j]['z_lens'][i]
             coords_imp[j, 0, i], coords_imp[j, 1, i] = solution[j]['x_imp'][i], solution[j]['z_imp'][i]
             coords_lens_2[j, 0, i], coords_lens_2[j, 1, i] = solution[j]['x_lens_refl_1'][i], solution[j]['z_lens_refl_1'][i]
@@ -405,15 +433,16 @@ class RayTracing(RayTracingSolver):
                     theta, c1, c1 / 2, k, self.transducer.element_width
                 )
 
-        coords_transducer_mat = np.tile(coords_transducer[:, :, np.newaxis], (1, 1, n_focii))
-        coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
+        # Use cupy for tile and linalg.norm
+        coords_transducer_mat = cp.tile(coords_transducer[:, :, cp.newaxis], (1, 1, n_focii))
+        coords_focus_mat = cp.tile(coords_focus[:, :, cp.newaxis], (1, 1, n_elem))
 
-        d1_c1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
-        d2_c_imp = np.linalg.norm(coords_lens - coords_imp, axis=1)
-        d3_c_imp = np.linalg.norm(coords_imp - coords_lens_2, axis=1)
-        d4_c_imp = np.linalg.norm(coords_lens_2 - coords_imp_2, axis=1)
-        d5_c2 = np.linalg.norm(coords_imp_2 - coords_pipe, axis=1)
-        d6_c3 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
+        d1_c1 = cp.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
+        d2_c_imp = cp.linalg.norm(coords_lens - coords_imp, axis=1)
+        d3_c_imp = cp.linalg.norm(coords_imp - coords_lens_2, axis=1)
+        d4_c_imp = cp.linalg.norm(coords_lens_2 - coords_imp_2, axis=1)
+        d5_c2 = cp.linalg.norm(coords_imp_2 - coords_pipe, axis=1)
+        d6_c3 = cp.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
 
         tofs = d1_c1 / c1 + d2_c_imp / c_impedance + d3_c_imp / c_impedance + d4_c_imp / c_impedance + d5_c2 / c2 + d6_c3 / c3
 
@@ -428,12 +457,14 @@ class RayTracing(RayTracingSolver):
 
         # Coords. in Lens (Transducer Interface -> Lens Interface)
         x_lens, z_lens = self.acoustic_lens.xy_from_alpha(acurve)
-        gamma_1 = np.arctan2((z_lens - zc), (x_lens - xc))
-        gamma_1 = gamma_1 + (gamma_1 < 0) * np.pi
+        # Use cupy for arctan2, pi
+        gamma_1 = cp.arctan2((z_lens - zc), (x_lens - xc))
+        gamma_1 = gamma_1 + (gamma_1 < 0) * cp.pi
 
         # Lens Interface -> Pipe Interface
         gamma_2, inc_2, ref_2 = snell(c1, c2, gamma_1, self.acoustic_lens.dydx_from_alpha(acurve))
-        a_2 = np.tan(uhp(gamma_2))
+        # Use cupy for tan
+        a_2 = cp.tan(uhp(gamma_2))
         b_2 = z_lens - a_2 * x_lens
         aux_a_2 = a_2**2 + 1
         aux_b_2 = 2 * a_2 * b_2 - 2 * (self.pipeline.xcenter + a_2 * self.pipeline.zcenter)
@@ -447,13 +478,18 @@ class RayTracing(RayTracingSolver):
 
         # Pipe Interface -> Focus
         gamma_3, inc_3, ref_3 = snell(c2, c3, gamma_2, self.pipeline.dydx(x_pipe))
-        a_3 = np.tan(gamma_3)
-        b_3 = z_pipe - a_3 * x_pipe
-        aux_a_3 = -1 / a_3
-        aux_b_3 = zf - aux_a_3 * xf
-        # Coords. in Focus
-        x_found_focus = (aux_b_3 - b_3) / (a_3 - aux_a_3)
-        z_found_focus = a_3 * x_found_focus + b_3
+        
+        # --- START FIX: Numerically Stable Ray Calculation ---
+        sin_g3 = cp.sin(gamma_3)
+        cos_g3 = cp.cos(gamma_3)
+        sin2_g3 = sin_g3**2
+        cos2_g3 = cos_g3**2
+        sincos_g3 = sin_g3 * cos_g3
+
+        # Coords. in Focus (intersection of ray and its normal from target)
+        x_found_focus = sincos_g3 * (zf - z_pipe) + sin2_g3 * x_pipe + cos2_g3 * xf
+        z_found_focus = sin2_g3 * zf + cos2_g3 * z_pipe - sincos_g3 * (x_pipe - xf)
+        # --- END FIX ---
 
         # Distance between computed ray and focus
         dist = (x_found_focus - xf)**2 + (z_found_focus - zf)**2
@@ -479,21 +515,23 @@ class RayTracing(RayTracingSolver):
         cs1 = c1 / 2
         cs3 = c3 / 2
 
-        coords_transducer = np.array([self.transducer.xt, self.transducer.zt]).T
-        coords_focus = np.array([solution[0]['xf'], solution[0]['zf']]).T
-        coords_lens = np.zeros((n_elem, 2, n_focii))
-        coords_pipe = np.zeros((n_elem, 2, n_focii))
+        # Convert to cupy arrays for GPU calculation
+        coords_transducer = cp.asarray(np.array([self.transducer.xt, self.transducer.zt]).T)
+        coords_focus = cp.asarray(np.array([solution[0]['xf'], solution[0]['zf']]).T)
+        coords_lens = cp.zeros((n_elem, 2, n_focii))
+        coords_pipe = cp.zeros((n_elem, 2, n_focii))
 
         amplitudes = {
-            "final_amplitude": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "final_amplitude_volta": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "directivity": np.ones((n_elem, n_elem, n_focii), dtype=np.float64)
+            "final_amplitude": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "final_amplitude_volta": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "directivity": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64)
         }
 
         for combined_idx in range(n_focii * n_elem):
             i = combined_idx // n_elem
             j = combined_idx % n_elem
 
+            # Data is numpy, assign to cupy arrays
             coords_lens[j, 0, i], coords_lens[j, 1, i] = solution[j]['x_lens'][i], solution[j]['z_lens'][i]
             coords_pipe[j, 0, i], coords_pipe[j, 1, i] = solution[j]['x_pipe'][i], solution[j]['z_pipe'][i]
 
@@ -549,12 +587,13 @@ class RayTracing(RayTracingSolver):
                     theta, c1, c1 / 2, k, self.transducer.element_width
                 )
 
-        coords_transducer_mat = np.tile(coords_transducer[:, :, np.newaxis], (1, 1, n_focii))
-        coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
+        # Use cupy for tile and linalg.norm
+        coords_transducer_mat = cp.tile(coords_transducer[:, :, cp.newaxis], (1, 1, n_focii))
+        coords_focus_mat = cp.tile(coords_focus[:, :, cp.newaxis], (1, 1, n_elem))
 
-        d1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
-        d2 = np.linalg.norm(coords_lens - coords_pipe, axis=1)
-        d3 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
+        d1 = cp.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
+        d2 = cp.linalg.norm(coords_lens - coords_pipe, axis=1)
+        d3 = cp.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
 
         tofs = d1 / c1 + d2 / c2 + d3 / c3
 
@@ -578,18 +617,19 @@ class RayTracing(RayTracingSolver):
         cs3 = c3 / 2
 
         # Coordenadas do caminho 'R' (para o TOF)
-        coords_transducer = np.array([self.transducer.xt, self.transducer.zt]).T
-        coords_focus = np.array([solution_R[0]['xf'], solution_R[0]['zf']]).T
-        coords_lens = np.zeros((n_elem, 2, n_focii))
-        coords_imp = np.zeros((n_elem, 2, n_focii))
-        coords_lens_2 = np.zeros((n_elem, 2, n_focii))
-        coords_imp_2 = np.zeros((n_elem, 2, n_focii))
-        coords_pipe = np.zeros((n_elem, 2, n_focii))
+        # Convert to cupy arrays for GPU calculation
+        coords_transducer = cp.asarray(np.array([self.transducer.xt, self.transducer.zt]).T)
+        coords_focus = cp.asarray(np.array([solution_R[0]['xf'], solution_R[0]['zf']]).T)
+        coords_lens = cp.zeros((n_elem, 2, n_focii))
+        coords_imp = cp.zeros((n_elem, 2, n_focii))
+        coords_lens_2 = cp.zeros((n_elem, 2, n_focii))
+        coords_imp_2 = cp.zeros((n_elem, 2, n_focii))
+        coords_pipe = cp.zeros((n_elem, 2, n_focii))
 
         amplitudes = {
-            "final_amplitude": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "final_amplitude_volta": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "directivity": np.ones((n_elem, n_elem, n_focii), dtype=np.float64)
+            "final_amplitude": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "final_amplitude_volta": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "directivity": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64)
         }
 
         for combined_idx in range(n_focii * n_elem):
@@ -597,6 +637,7 @@ class RayTracing(RayTracingSolver):
             j = combined_idx % n_elem
 
             # Extrai coordenadas do caminho 'R' (para o TOF)
+            # Data is numpy, assign to cupy arrays
             coords_lens[j, 0, i], coords_lens[j, 1, i] = solution_R[j]['x_lens'][i], solution_R[j]['z_lens'][i]
             coords_imp[j, 0, i], coords_imp[j, 1, i] = solution_R[j]['x_imp'][i], solution_R[j]['z_imp'][i]
             coords_lens_2[j, 0, i], coords_lens_2[j, 1, i] = solution_R[j]['x_lens_refl_1'][i], solution_R[j]['z_lens_refl_1'][i]
@@ -692,15 +733,16 @@ class RayTracing(RayTracingSolver):
                 )
 
         # O TOF de ida (one-way) é o do caminho 'R'
-        coords_transducer_mat = np.tile(coords_transducer[:, :, np.newaxis], (1, 1, n_focii))
-        coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
+        # Use cupy for tile and linalg.norm
+        coords_transducer_mat = cp.tile(coords_transducer[:, :, cp.newaxis], (1, 1, n_focii))
+        coords_focus_mat = cp.tile(coords_focus[:, :, cp.newaxis], (1, 1, n_elem))
 
-        d1_c1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
-        d2_c_imp = np.linalg.norm(coords_lens - coords_imp, axis=1)
-        d3_c_imp = np.linalg.norm(coords_imp - coords_lens_2, axis=1)
-        d4_c_imp = np.linalg.norm(coords_lens_2 - coords_imp_2, axis=1)
-        d5_c2 = np.linalg.norm(coords_imp_2 - coords_pipe, axis=1)
-        d6_c3 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
+        d1_c1 = cp.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
+        d2_c_imp = cp.linalg.norm(coords_lens - coords_imp, axis=1)
+        d3_c_imp = cp.linalg.norm(coords_imp - coords_lens_2, axis=1)
+        d4_c_imp = cp.linalg.norm(coords_lens_2 - coords_imp_2, axis=1)
+        d5_c2 = cp.linalg.norm(coords_imp_2 - coords_pipe, axis=1)
+        d6_c3 = cp.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
 
         tofs = (d1_c1 / c1 + 
                 d2_c_imp / c_impedance + 
@@ -729,16 +771,17 @@ class RayTracing(RayTracingSolver):
         cs3 = c3 / 2
 
         # Coordenadas do caminho 'N' (para o TOF)
-        coords_transducer = np.array([self.transducer.xt, self.transducer.zt]).T
-        coords_focus = np.array([solution_N[0]['xf'], solution_N[0]['zf']]).T
-        coords_lens = np.zeros((n_elem, 2, n_focii))
-        coords_imp = np.zeros((n_elem, 2, n_focii))
-        coords_pipe = np.zeros((n_elem, 2, n_focii))
+        # Convert to cupy arrays for GPU calculation
+        coords_transducer = cp.asarray(np.array([self.transducer.xt, self.transducer.zt]).T)
+        coords_focus = cp.asarray(np.array([solution_N[0]['xf'], solution_N[0]['zf']]).T)
+        coords_lens = cp.zeros((n_elem, 2, n_focii))
+        coords_imp = cp.zeros((n_elem, 2, n_focii))
+        coords_pipe = cp.zeros((n_elem, 2, n_focii))
         
         amplitudes = {
-            "final_amplitude": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "final_amplitude_volta": np.ones((n_elem, n_elem, n_focii), dtype=np.float64),
-            "directivity": np.ones((n_elem, n_elem, n_focii), dtype=np.float64)
+            "final_amplitude": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "final_amplitude_volta": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64),
+            "directivity": cp.ones((n_elem, n_elem, n_focii), dtype=cp.float64)
         }
 
         for combined_idx in range(n_focii * n_elem):
@@ -746,6 +789,7 @@ class RayTracing(RayTracingSolver):
             j = combined_idx % n_elem
 
             # Extrai coordenadas do caminho 'N' (para o TOF)
+            # Data is numpy, assign to cupy arrays
             coords_lens[j, 0, i], coords_lens[j, 1, i] = solution_N[j]['x_lens'][i], solution_N[j]['z_lens'][i]
             coords_imp[j, 0, i], coords_imp[j, 1, i] = solution_N[j]['x_imp'][i], solution_N[j]['z_imp'][i]
             coords_pipe[j, 0, i], coords_pipe[j, 1, i] = solution_N[j]['x_pipe'][i], solution_N[j]['z_pipe'][i]
@@ -832,13 +876,14 @@ class RayTracing(RayTracingSolver):
                 )
 
         # O TOF de ida (one-way) é o do caminho 'N'
-        coords_transducer_mat = np.tile(coords_transducer[:, :, np.newaxis], (1, 1, n_focii))
-        coords_focus_mat = np.tile(coords_focus[:, :, np.newaxis], (1, 1, n_elem))
+        # Use cupy for tile and linalg.norm
+        coords_transducer_mat = cp.tile(coords_transducer[:, :, cp.newaxis], (1, 1, n_focii))
+        coords_focus_mat = cp.tile(coords_focus[:, :, cp.newaxis], (1, 1, n_elem))
 
-        d1 = np.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
-        d2 = np.linalg.norm(coords_lens - coords_imp, axis=1)
-        d3 = np.linalg.norm(coords_imp - coords_pipe, axis=1)
-        d4 = np.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
+        d1 = cp.linalg.norm(coords_lens - coords_transducer_mat, axis=1)
+        d2 = cp.linalg.norm(coords_lens - coords_imp, axis=1)
+        d3 = cp.linalg.norm(coords_imp - coords_pipe, axis=1)
+        d4 = cp.linalg.norm(coords_pipe - coords_focus_mat.T, axis=1)
 
         tofs = d1 / c1 + d2 / c_impedance + d3 / c2 + d4 / c3 # TOF do caminho 'N'
 

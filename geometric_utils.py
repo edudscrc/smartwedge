@@ -39,11 +39,12 @@ def line_equation_polar(alpha, a, b, eps=1e-12):
 def findIntersectionBetweenAcousticLensAndRay_fast(a_ray, b_ray, acoustic_lens, tol=1e-3):
     """
     Vectorized version of findIntersectionBetweenAcousticLensAndRay.
+    Returns a CuPy array.
     """
     a_ray = cp.array(a_ray)
     b_ray = cp.array(b_ray)
 
-    alpha_step = cp.radians(0.1)
+    alpha_step = cp.radians(0.05)
     ang_span = cp.arange(-acoustic_lens.alpha_max, acoustic_lens.alpha_max + alpha_step, alpha_step)
     N_rays = len(a_ray)
 
@@ -71,7 +72,6 @@ def findIntersectionBetweenAcousticLensAndRay_fast(a_ray, b_ray, acoustic_lens, 
 
     # Find the index of the minimum distance for each ray
     # coarse_indices is shape (N_rays,)
-    # coarse_indices = cp.nanargmin(dist_grid_sq, axis=1)
     # Replace NaN with +infinity so argmin can safely find the minimum *finite* value
     dist_grid_safe = cp.nan_to_num(dist_grid_sq, nan=cp.inf)
     coarse_indices = cp.argmin(dist_grid_safe, axis=1)
@@ -82,13 +82,12 @@ def findIntersectionBetweenAcousticLensAndRay_fast(a_ray, b_ray, acoustic_lens, 
     # --- 2. Fine Grid Search (Vectorized) ---
     
     # Number of points in the fine grid
-    N_fine_points = 200 # Original was (alpha_step * 2) / (alpha_step / 100)
+    N_fine_points = 600 # Original was (alpha_step * 2) / (alpha_step / 100)
 
     # Create a 2D grid of fine angles, shape (N_rays, N_fine_points)
     # Each row is a different fine grid, centered on that ray's coarse_alpha
     fine_start = (alpha_0_coarse - alpha_step)[:, cp.newaxis]
     fine_end = (alpha_0_coarse + alpha_step)[:, cp.newaxis]
-    # ang_span_finer_2D = cp.linspace(fine_start, fine_end, N_fine_points, axis=1)
     ang_span_finer_2D = cp.linspace(fine_start, fine_end, N_fine_points, axis=1).reshape(N_rays, N_fine_points)
 
     # --- 3. Repeat Calculations on the 2D Fine Grid ---
@@ -109,7 +108,6 @@ def findIntersectionBetweenAcousticLensAndRay_fast(a_ray, b_ray, acoustic_lens, 
     dist_fine_sq = (x1_fine_grid - x2_fine_grid)**2 + (y1_fine_grid - y2_fine_grid)**2
 
     # Find the minimum for each ray
-    # fine_indices = cp.nanargmin(dist_fine_sq, axis=1)
     dist_fine_safe = cp.nan_to_num(dist_fine_sq, nan=cp.inf)
     fine_indices = cp.argmin(dist_fine_safe, axis=1)
     
@@ -122,18 +120,20 @@ def findIntersectionBetweenAcousticLensAndRay_fast(a_ray, b_ray, acoustic_lens, 
     # Set to NaN where the minimum distance is not within tolerance
     alpha_root[min_dist_sq >= tol**2] = cp.nan
 
-    return alpha_root.get()
+    # --- FIX: Return the CuPy array directly, do not call .get() ---
+    return alpha_root
 
 
 def findIntersectionBetweenImpedanceMatchingAndRay_fast(a_ray, b_ray, acoustic_lens, tol=1e-3):
     """
     Vectorized version of findIntersectionBetweenImpedanceMatchingAndRay.
+    Returns a CuPy array.
     """
 
     a_ray = cp.array(a_ray)
     b_ray = cp.array(b_ray)
 
-    alpha_step = cp.radians(0.1)
+    alpha_step = cp.radians(0.05)
     ang_span = cp.arange(-acoustic_lens.alpha_max, acoustic_lens.alpha_max + alpha_step, alpha_step)
     thickness = acoustic_lens.impedance_matching.thickness
     N_rays = len(a_ray)
@@ -162,7 +162,6 @@ def findIntersectionBetweenImpedanceMatchingAndRay_fast(a_ray, b_ray, acoustic_l
 
     # Find the index of the minimum distance for each ray
     # coarse_indices is shape (N_rays,)
-    # coarse_indices = cp.nanargmin(dist_grid_sq, axis=1)
     # Replace NaN with +infinity so argmin can safely find the minimum *finite* value
     dist_grid_safe = cp.nan_to_num(dist_grid_sq, nan=cp.inf)
     coarse_indices = cp.argmin(dist_grid_safe, axis=1)
@@ -173,13 +172,12 @@ def findIntersectionBetweenImpedanceMatchingAndRay_fast(a_ray, b_ray, acoustic_l
     # --- 2. Fine Grid Search (Vectorized) ---
     
     # Number of points in the fine grid
-    N_fine_points = 200 # Original was (alpha_step * 2) / (alpha_step / 100)
+    N_fine_points = 600 # Original was (alpha_step * 2) / (alpha_step / 100)
 
     # Create a 2D grid of fine angles, shape (N_rays, N_fine_points)
     # Each row is a different fine grid, centered on that ray's coarse_alpha
     fine_start = (alpha_0_coarse - alpha_step)[:, cp.newaxis]
     fine_end = (alpha_0_coarse + alpha_step)[:, cp.newaxis]
-    # ang_span_finer_2D = cp.linspace(fine_start, fine_end, N_fine_points, axis=1)
     ang_span_finer_2D = cp.linspace(fine_start, fine_end, N_fine_points, axis=1).reshape(N_rays, N_fine_points)
 
     # --- 3. Repeat Calculations on the 2D Fine Grid ---
@@ -200,7 +198,6 @@ def findIntersectionBetweenImpedanceMatchingAndRay_fast(a_ray, b_ray, acoustic_l
     dist_fine_sq = (x1_fine_grid - x2_fine_grid)**2 + (y1_fine_grid - y2_fine_grid)**2
 
     # Find the minimum for each ray
-    # fine_indices = cp.nanargmin(dist_fine_sq, axis=1)
     dist_fine_safe = cp.nan_to_num(dist_fine_sq, nan=cp.inf)
     fine_indices = cp.argmin(dist_fine_safe, axis=1)
     
@@ -213,4 +210,5 @@ def findIntersectionBetweenImpedanceMatchingAndRay_fast(a_ray, b_ray, acoustic_l
     # Set to NaN where the minimum distance is not within tolerance
     alpha_root[min_dist_sq >= tol**2] = cp.nan
 
-    return alpha_root.get()
+    # --- FIX: Return the CuPy array directly, do not call .get() ---
+    return alpha_root

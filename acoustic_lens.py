@@ -1,4 +1,5 @@
 import numpy as  np
+import cupy as cp
 
 
 class ImpedanceMatching:
@@ -39,21 +40,22 @@ class AcousticLens:
         self.T = np.sqrt((x0 - xt)**2 + (z0 - zt)**2)/self.c1 + self.h0/self.c2
 
         self.a = (c1/c2)**2 - 1
-        self.b = lambda alpha : 2 * d * np.cos(alpha) - 2 * self.T * c1 ** 2 / c2
+        self.b = lambda alpha : 2 * d * cp.cos(alpha) - 2 * self.T * c1 ** 2 / c2
         self.c = (c1 * self.T) ** 2 - d ** 2
 
-        self.xlens, self.zlens = self.xy_from_alpha(np.linspace(-self.alpha_max, self.alpha_max, self.num_of_points))
+        self.xlens, self.zlens = self.xy_from_alpha_np(np.linspace(-self.alpha_max, self.alpha_max, self.num_of_points))
 
         if impedance_matching:
             self.impedance_matching = ImpedanceMatching(p_wave_speed=np.float32(2900), density=np.float32(1700), impedance_matching_thickness=impedance_matching_thickness)
-            self.x_imp, self.z_imp = self.xy_from_alpha(np.linspace(-self.alpha_max, self.alpha_max, self.num_of_points), 
+            self.x_imp, self.z_imp = self.xy_from_alpha_np(np.linspace(-self.alpha_max, self.alpha_max, self.num_of_points), 
                                                         thickness=self.impedance_matching.thickness)
         else:
             self.impedance_matching = None
             self.x_imp, self.z_imp = None, None
 
     def h(self, alpha):
-        return (-self.b(alpha) - np.sqrt(self.b(alpha) ** 2 - 4 * self.a * self.c)) / (2 * self.a)
+        # Use cupy for cos, sqrt
+        return (-self.b(alpha) - cp.sqrt(self.b(alpha) ** 2 - 4 * self.a * self.c)) / (2 * self.a)
 
     def dhda(self, alpha):
         """
@@ -62,9 +64,10 @@ class AcousticLens:
         :param alpha: pipe inspection angle in rad.
         :return: derivative value of z(alpha) in polar coordinates.
         """
+        # Use cupy for sin, sqrt
         return -1 / (2 * self.a) * (
-                    -2 * self.d * np.sin(alpha) + 1 / 2 * 1 / np.sqrt(self.b(alpha) ** 2 - 4 * self.a * self.c) * (
-                        -4 * self.b(alpha) * self.d * np.sin(alpha)))
+                    -2 * self.d * cp.sin(alpha) + 1 / 2 * 1 / cp.sqrt(self.b(alpha) ** 2 - 4 * self.a * self.c) * (
+                        -4 * self.b(alpha) * self.d * cp.sin(alpha)))
 
     def xy_from_alpha(self, alpha, thickness=0):
         """Computes the (x,y) coordinates of the lens for a given pipe angle"""
@@ -73,8 +76,9 @@ class AcousticLens:
         scale_factor = (z - thickness) / z
         z *= scale_factor
 
-        y = z * np.cos(alpha)
-        x = z * np.sin(alpha)
+        # Use cupy for cos, sin
+        y = z * cp.cos(alpha)
+        x = z * cp.sin(alpha)
         return x, y
 
     def dydx_from_alpha(self, alpha, mode='full', thickness=0):
@@ -88,8 +92,9 @@ class AcousticLens:
         dh_dAlpha *= scale_factor
 
         # Equations (A.19a) and (A.19b) in Appendix A.2.2.
-        dy = dh_dAlpha * np.cos(alpha) - h_ * np.sin(alpha)
-        dx = dh_dAlpha * np.sin(alpha) + h_ * np.cos(alpha)
+        # Use cupy for cos, sin
+        dy = dh_dAlpha * cp.cos(alpha) - h_ * cp.sin(alpha)
+        dx = dh_dAlpha * cp.sin(alpha) + h_ * cp.cos(alpha)
 
         if mode == 'full':
             return  dy/dx
@@ -97,3 +102,19 @@ class AcousticLens:
             return dy, dx
         else:
             raise ValueError("mode must be 'full' or 'parts'")
+
+    #Numpy version for plots and non-gpu initialization
+    def h_np(self, alpha):
+        b_alpha = 2 * self.d * np.cos(alpha) - 2 * self.T * self.c1 ** 2 / self.c2
+        return (-b_alpha - np.sqrt(b_alpha ** 2 - 4 * self.a * self.c)) / (2 * self.a)
+
+    def xy_from_alpha_np(self, alpha, thickness=0):
+        """Computes the (x,y) coordinates of the lens for a given pipe angle"""
+        z = self.h_np(alpha)
+
+        scale_factor = (z - thickness) / z
+        z *= scale_factor
+
+        y = z * np.cos(alpha)
+        x = z * np.sin(alpha)
+        return x, y
