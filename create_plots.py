@@ -16,7 +16,7 @@ NN_sscan = envelope(NN_sscan, axis=0)
 
 # SUM_sscan = NN_sscan + NR_sscan + RN_sscan + RR_sscan
 
-num_focus = 11
+num_focus = 51
 
 alpha_max_scan = np.pi / 4.0
 alpha_min_scan = -np.pi / 4.0

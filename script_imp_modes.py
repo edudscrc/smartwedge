@@ -120,7 +120,7 @@ sim = Simulator(simulation_parameters, [raytracer], verbose=True)
 # 4. ADD THE REFLECTOR YOU WANT TO IMAGE
 # -----------------------------------------------------------------
 focus_radius = pipeline.inner_radius
-focus_angle = np.linspace(alpha_min_scan, alpha_max_scan, 11)
+focus_angle = np.linspace(alpha_min_scan, alpha_max_scan, 51)
 xf_reflectors, zf_reflectors = focus_radius * np.sin(focus_angle), focus_radius * np.cos(focus_angle)
 
 arg = (xf_reflectors, zf_reflectors)
