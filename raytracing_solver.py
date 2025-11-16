@@ -89,7 +89,7 @@ class RayTracingSolver(ABC):
 
         results = [None] * N_elem
 
-        # This loop over elements (N_elem) is difficult to vectorize
+        # Note: This loop over elements (N_elem) is difficult to vectorize
         # without significant refactoring of the kernel functions.
         # The main vectorization gain is from passing all xf, zf points at once.
         for i in range(N_elem):
@@ -98,88 +98,119 @@ class RayTracingSolver(ABC):
         return results
 
     def _grid_search(self, xc: float, yc: float, xf: np.ndarray, zf: np.ndarray, mode, alpha_step: float, tol: float, delta_alpha: float) -> dict:
-        """
-        Hybrid search: Loops over focal points, but uses vectorized GPU
-        grid searches internally instead of scipy.optimize.
-        """
-        
-        # --- 0. SETUP ---
-        # Number of steps in the fine grid. Controls precision.
-        N_FINE_STEPS = 30 
-        
-        # Coarse grid (1D)
+        # Coarse grid search remains the same, but on GPU
         alpha_grid_coarse = cp.arange(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max + alpha_step, alpha_step)
         
-        # Fine grid (1D)
-        fine_alphas_1D = cp.linspace(-delta_alpha, delta_alpha, N_FINE_STEPS) 
+        # We no longer need the fine grid
+        # alpha_grid_fine = np.arange(-self.acoustic_lens.alpha_max, self.acoustic_lens.alpha_max + alpha_step/10, alpha_step/10)
         
-        # Convert all inputs to CuPy arrays
-        xf_cp = cp.asarray(xf) # Shape (N_points,)
-        zf_cp = cp.asarray(zf) # Shape (N_points,)
+        # Convert main inputs to cupy arrays
+        xf_cp = cp.asarray(xf)
+        zf_cp = cp.asarray(zf)
         
-        alphaa = cp.zeros_like(xf_cp) # Final array for best angles
+        alphaa = cp.zeros_like(xf_cp)
         num_focal_points = len(xf_cp)
 
-        # This loop iterates over all focal points (e.g., 181 for delay laws)
+        # This loop iterates over all focal points (e.g., 181 for delay laws, 51 for reflectors)
         for i, (x_target, y_target) in enumerate(zip(xf, zf)): # Loop over CPU arrays
             
-            # Print progress sparsely
+            # Print progress sparsely to avoid flooding the console
             if (i+1) % 20 == 0 or i == 0 or i == num_focal_points - 1:
                 print(f"    [GridSearch] Element @ {xc:.4f}: Solving focal point {i+1}/{num_focal_points}...")
 
-            # Create cupy 1-element arrays for this specific target
+            # --- 1. COARSE GRID SEARCH ---
+            # Find the approximate best angle using a vectorized coarse grid
+            
+            # Create cupy 1-element arrays for targets
             x_target_cp = cp.array([x_target])
             y_target_cp = cp.array([y_target])
 
-            # --- 1. COARSE GRID SEARCH (Vectorized, 1D) ---
-            # Broadcast target points to match the coarse grid shape
-            xf_grid_coarse = cp.ones_like(alpha_grid_coarse) * x_target_cp
-            zf_grid_coarse = cp.ones_like(alpha_grid_coarse) * y_target_cp
-
             if mode == 'NN':
                 if self.acoustic_lens.impedance_matching is not None:
-                    dic_coarse = self._dist_kernel_NN(xc, yc, xf_grid_coarse, zf_grid_coarse, alpha_grid_coarse)
+                    dic_coarse_distances = self._dist_kernel_NN(
+                        xc, yc,
+                        cp.ones_like(alpha_grid_coarse) * x_target_cp,
+                        cp.ones_like(alpha_grid_coarse) * y_target_cp,
+                        alpha_grid_coarse
+                    )
                 else:
-                    dic_coarse = self._dist_kernel_NN_without_imp(xc, yc, xf_grid_coarse, zf_grid_coarse, alpha_grid_coarse)
+                    dic_coarse_distances = self._dist_kernel_NN_without_imp(
+                        xc, yc,
+                        cp.ones_like(alpha_grid_coarse) * x_target_cp,
+                        cp.ones_like(alpha_grid_coarse) * y_target_cp,
+                        alpha_grid_coarse
+                    )
             elif mode == 'RR' or mode == 'RN':
-                dic_coarse = self._dist_kernel_RR(xc, yc, xf_grid_coarse, zf_grid_coarse, alpha_grid_coarse)
+                dic_coarse_distances = self._dist_kernel_RR(
+                    xc, yc,
+                    cp.ones_like(alpha_grid_coarse) * x_target_cp,
+                    cp.ones_like(alpha_grid_coarse) * y_target_cp,
+                    alpha_grid_coarse
+                )
             elif mode == 'NR':
-                dic_coarse = self._dist_kernel_NN(xc, yc, xf_grid_coarse, zf_grid_coarse, alpha_grid_coarse)
+                dic_coarse_distances = self._dist_kernel_NN(
+                    xc, yc,
+                    cp.ones_like(alpha_grid_coarse) * x_target_cp,
+                    cp.ones_like(alpha_grid_coarse) * y_target_cp,
+                    alpha_grid_coarse
+                )
 
-            # Find alpha minimizing distance on coarse grid
-            dist_coarse_cp = dic_coarse['dist']
-            alpha_coarse_min = alpha_grid_coarse[cp.nanargmin(dist_coarse_cp)] # This is a 0-dim cupy array (scalar)
+            # Find alpha minimizing distance on coarse grid (on GPU)
+            dist_coarse_cp = dic_coarse_distances['dist']
+            alpha_coarse_min_cp = alpha_grid_coarse[cp.nanargmin(dist_coarse_cp)]
+            # Get result back to CPU float for scipy optimizer
+            alpha_coarse_min = alpha_coarse_min_cp.item()
 
-            # --- 2. FINE GRID SEARCH (Vectorized, 1D) ---
-            # Create a 1D fine grid centered around the coarse minimum
-            alpha_grid_fine_1D = alpha_coarse_min + fine_alphas_1D
 
-            # Broadcast target points to match the fine grid shape
-            xf_grid_fine = cp.ones_like(alpha_grid_fine_1D) * x_target_cp
-            zf_grid_fine = cp.ones_like(alpha_grid_fine_1D) * y_target_cp
+            # --- 2. PRECISE OPTIMIZATION ---
+            # Use a numerical optimizer to find the *exact* minimum
+            # within a window around the coarse minimum.
+            
+            # Define the search bounds
+            search_bounds = (alpha_coarse_min - delta_alpha, alpha_coarse_min + delta_alpha)
 
-            # Call the kernel *once* for the entire fine grid
-            if mode == 'NN':
-                if self.acoustic_lens.impedance_matching is not None:
-                    dic_fine = self._dist_kernel_NN(xc, yc, xf_grid_fine, zf_grid_fine, alpha_grid_fine_1D)
+            # Define the objective function for the optimizer
+            # This function calculates the distance for a single alpha
+            def objective_func(alpha):
+                # alpha is a python float, convert to cupy array
+                alpha_arr = cp.array([alpha])
+                
+                if mode == 'NN':
+                    if self.acoustic_lens.impedance_matching is not None:
+                        dist_dict = self._dist_kernel_NN(xc, yc, x_target_cp, y_target_cp, alpha_arr)
+                    else:
+                        dist_dict = self._dist_kernel_NN_without_imp(xc, yc, x_target_cp, y_target_cp, alpha_arr)
+                elif mode == 'RR' or mode == 'RN':
+                    dist_dict = self._dist_kernel_RR(xc, yc, x_target_cp, y_target_cp, alpha_arr)
+                elif mode == 'NR':
+                    dist_dict = self._dist_kernel_NN(xc, yc, x_target_cp, y_target_cp, alpha_arr)
+                
+                # Return the scalar distance; handle NaNs
+                # .item() converts 0-dim cupy array to python float
+                dist = dist_dict['dist'][0].item() 
+                return dist if not np.isnan(dist) else 1e10 # Return large value for optimizer if NaN
+
+            # Run the bounded scalar minimizer (this is a CPU function)
+            try:
+                opt_result = minimize_scalar(
+                    objective_func, 
+                    bounds=search_bounds, 
+                    method='bounded' # Use 'bounded' to stay within the window
+                )
+                
+                if opt_result.success:
+                    alphaa[i] = opt_result.x # Assign float to cupy array element
                 else:
-                    dic_fine = self._dist_kernel_NN_without_imp(xc, yc, xf_grid_fine, zf_grid_fine, alpha_grid_fine_1D)
-            elif mode == 'RR' or mode == 'RN':
-                dic_fine = self._dist_kernel_RR(xc, yc, xf_grid_fine, zf_grid_fine, alpha_grid_fine_1D)
-            elif mode == 'NR':
-                dic_fine = self._dist_kernel_NN(xc, yc, xf_grid_fine, zf_grid_fine, alpha_grid_fine_1D)
-            
-            # Find the best angle from the fine search
-            dist_fine_cp = dic_fine['dist']
-            best_fine_angle = alpha_grid_fine_1D[cp.nanargmin(dist_fine_cp)]
-            
-            # Store the best angle for this focal point
-            alphaa[i] = best_fine_angle
+                    # Optimizer failed, fall back to coarse result
+                    alphaa[i] = alpha_coarse_min
+            except ValueError:
+                # Optimization can fail if coarse grid returns NaN or bounds are bad
+                alphaa[i] = alpha_coarse_min
 
-        # --- 3. FINAL KERNEL CALL ---
+        # --- 3. FINAL EVALUATION ---
+        print(f"    [GridSearch] Element @ {xc:.4f}: Final vectorized kernel call for {num_focal_points} points...")
         # All optimal alphas (alphaa) have been found.
         # Now, call the kernel function *once* with the full cupy arrays.
-        print(f"    [GridSearch] Element @ {xc:.4f}: Fine search done. Running final kernel call...")
         if mode == 'NN':
             if self.acoustic_lens.impedance_matching is not None:
                 final_results = self._dist_kernel_NN(xc, yc, xf_cp, zf_cp, alphaa)
@@ -192,6 +223,7 @@ class RayTracingSolver(ABC):
 
         final_results['firing_angle'] = alphaa
         # Set distances above tolerance to NaN
+        # Use cupy.where for safe assignment with NaN
         final_results['dist'] = cp.where(final_results['dist'] >= tol, cp.nan, final_results['dist'])
 
         # Convert all cupy arrays in the dictionary back to numpy
@@ -202,7 +234,6 @@ class RayTracingSolver(ABC):
             else:
                 final_results_cpu[key] = value # e.g., for 'interface_lens2imp' which is a list
         
-        print(f"    [GridSearch] Element @ {xc:.4f}: Done.")
         return final_results_cpu
 
     @abstractmethod
