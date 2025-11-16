@@ -9,8 +9,6 @@ from pipeline import Pipeline
 from ultrasound import *
 from time import time
 
-FLOAT = np.float32
-
 
 class RayTracingSolver(ABC):
     def __init__(self, acoustic_lens: AcousticLens, pipeline: Pipeline, transducer: Transducer, final_amplitude: bool= False, directivity: bool= False):
@@ -143,15 +141,8 @@ class RayTracingSolver(ABC):
                         cp.ones_like(alpha_grid_coarse) * y_target_cp,
                         alpha_grid_coarse
                     )
-            elif mode == 'RR' or mode == 'RN':
+            elif mode == 'RR':
                 dic_coarse_distances = self._dist_kernel_RR(
-                    xc, yc,
-                    cp.ones_like(alpha_grid_coarse) * x_target_cp,
-                    cp.ones_like(alpha_grid_coarse) * y_target_cp,
-                    alpha_grid_coarse
-                )
-            elif mode == 'NR':
-                dic_coarse_distances = self._dist_kernel_NN(
                     xc, yc,
                     cp.ones_like(alpha_grid_coarse) * x_target_cp,
                     cp.ones_like(alpha_grid_coarse) * y_target_cp,
@@ -188,11 +179,9 @@ class RayTracingSolver(ABC):
                         dist_dict = self._dist_kernel_NN(xc, yc, x_target_cp, y_target_cp, alpha_arr)
                     else:
                         dist_dict = self._dist_kernel_NN_without_imp(xc, yc, x_target_cp, y_target_cp, alpha_arr)
-                elif mode == 'RR' or mode == 'RN':
+                elif mode == 'RR':
                     dist_dict = self._dist_kernel_RR(xc, yc, x_target_cp, y_target_cp, alpha_arr)
-                elif mode == 'NR':
-                    dist_dict = self._dist_kernel_NN(xc, yc, x_target_cp, y_target_cp, alpha_arr)
-                
+
                 # Return the scalar distance; handle NaNs
                 # .item() converts 0-dim cupy array to python float
                 dist = dist_dict['dist'][0].item() 
@@ -227,10 +216,8 @@ class RayTracingSolver(ABC):
                 final_results = self._dist_kernel_NN(xc, yc, xf_cp, zf_cp, alphaa)
             else:
                 final_results = self._dist_kernel_NN_without_imp(xc, yc, xf_cp, zf_cp, alphaa)
-        elif mode == 'RR' or mode == 'RN':
-            final_results = self._dist_kernel_RR(xc, yc, xf_cp, zf_cp, alphaa)
-        elif mode == 'NR':
-            final_results = self._dist_kernel_NN(xc, yc, xf_cp, zf_cp, alphaa)            
+        elif mode == 'RR':
+            final_results = self._dist_kernel_RR(xc, yc, xf_cp, zf_cp, alphaa)           
 
         final_results['firing_angle'] = alphaa
         # Set distances above tolerance to NaN

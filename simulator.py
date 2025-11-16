@@ -8,7 +8,6 @@ from simulator_utils import fmc_sim_kernel, fmc2sscan
 
 __all__ = ["Simulator"]
 
-FLOAT = np.float32
 
 class Simulator:
     def __init__(self, sim_params: dict, raytracer_list: list, verbose: bool = True):
@@ -66,7 +65,7 @@ class Simulator:
         Nel = self.transducer.num_elem
         Nt = len(self.tspan)
         Nsim = len(self.sim_list)
-        self.fmcs = np.zeros(shape=(Nt, Nel, Nel, Nsim), dtype=FLOAT)
+        self.fmcs = np.zeros(shape=(Nt, Nel, Nel, Nsim), dtype=np.float32)
 
         for i, raytracer in enumerate(self.raytracer_list):
             if self.verbose:
@@ -96,7 +95,7 @@ class Simulator:
         tofs_np = cp.asnumpy(tofs_cp)
         amplitudes_np = {k: cp.asnumpy(v) for k, v in amplitudes_cp.items()}
 
-        fmcs = np.zeros(shape=(Nt, Nel, Nel, Nsim), dtype=FLOAT)
+        fmcs = np.zeros(shape=(Nt, Nel, Nel, Nsim), dtype=np.float32)
 
         print(f"    [Sim.Kernel] Ray tracing complete. Applying FMC kernel for {Nsim} reflectors...")
         for i in prange(Nsim):
