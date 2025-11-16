@@ -7,6 +7,7 @@ from acoustic_lens import AcousticLens
 from transducer import Transducer
 from pipeline import Pipeline
 from ultrasound import *
+from time import time
 
 FLOAT = np.float32
 
@@ -120,6 +121,8 @@ class RayTracingSolver(ABC):
 
             # --- 1. COARSE GRID SEARCH ---
             # Find the approximate best angle using a vectorized coarse grid
+
+            t0 = time()
             
             # Create cupy 1-element arrays for targets
             x_target_cp = cp.array([x_target])
@@ -161,6 +164,11 @@ class RayTracingSolver(ABC):
             # Get result back to CPU float for scipy optimizer
             alpha_coarse_min = alpha_coarse_min_cp.item()
 
+            t1 = time()
+            print(f'1 - DONE IN {t1 - t0} SECONDS')
+
+            t0 = time()
+
 
             # --- 2. PRECISE OPTIMIZATION ---
             # Use a numerical optimizer to find the *exact* minimum
@@ -190,6 +198,7 @@ class RayTracingSolver(ABC):
                 dist = dist_dict['dist'][0].item() 
                 return dist if not np.isnan(dist) else 1e10 # Return large value for optimizer if NaN
 
+            
             # Run the bounded scalar minimizer (this is a CPU function)
             try:
                 opt_result = minimize_scalar(
@@ -206,6 +215,8 @@ class RayTracingSolver(ABC):
             except ValueError:
                 # Optimization can fail if coarse grid returns NaN or bounds are bad
                 alphaa[i] = alpha_coarse_min
+            t1 = time()
+            print(f'2 - DONE IN {t1 - t0} SECONDS')
 
         # --- 3. FINAL EVALUATION ---
         print(f"    [GridSearch] Element @ {xc:.4f}: Final vectorized kernel call for {num_focal_points} points...")

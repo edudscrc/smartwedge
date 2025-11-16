@@ -120,7 +120,6 @@ def findIntersectionBetweenAcousticLensAndRay_fast(a_ray, b_ray, acoustic_lens, 
     # Set to NaN where the minimum distance is not within tolerance
     alpha_root[min_dist_sq >= tol**2] = cp.nan
 
-    # --- FIX: Return the CuPy array directly, do not call .get() ---
     return alpha_root
 
 
@@ -210,5 +209,4 @@ def findIntersectionBetweenImpedanceMatchingAndRay_fast(a_ray, b_ray, acoustic_l
     # Set to NaN where the minimum distance is not within tolerance
     alpha_root[min_dist_sq >= tol**2] = cp.nan
 
-    # --- FIX: Return the CuPy array directly, do not call .get() ---
     return alpha_root

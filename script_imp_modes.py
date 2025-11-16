@@ -88,7 +88,7 @@ zf_final = zf_rot + pipeline.zcenter
 print(f"--- [1/5] Calculating S-Scan Delay Laws ---")
 print(f"Solving for {num_angles} angles simultaneously...")
 tofs, _, _ = raytracer.solve(xf_final, zf_final, mode=mode, 
-                             alpha_step=1e-4, 
+                             alpha_step=1e-5, 
                              dist_tol=1.0, 
                              delta_alpha=0.1)
 
@@ -132,7 +132,7 @@ sim.add_reflector(*arg, different_instances=True)
 print(f"--- [4/5] Running Main Simulation (Mode: {mode}) ---")
 # Pass the same high-precision parameters to the simulation run
 sscan = sim.get_response(mode, 
-                         alpha_step=1e-4, 
+                         alpha_step=1e-5, 
                          dist_tol=1.0,
                          delta_alpha=0.1)
 
