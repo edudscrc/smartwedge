@@ -18,8 +18,10 @@ def solid2fluid_r_coeff(theta_p1, theta_p2, cp1, cs1, cp2, rho1, rho2):
     return -fluid2solid_r_coeff(theta_p2, theta_p1, cp2, cp1, cs1, rho2, rho1)
 
 
-
 class RayTracing(RayTracingSolver):
+    #######################################
+    ## DISTANCE KERNEL FOR NN-REFLECTION ##
+    #######################################
     def _dist_kernel_NN(self, xc: float, zc: float, xf: ndarray, zf: ndarray, acurve: float):
         c1, c2, c3 = self.get_speeds()
 
@@ -32,21 +34,23 @@ class RayTracing(RayTracingSolver):
 
         # Coords. in Lens (Transducer Interface -> Lens Interface)
         x_lens, z_lens = self.acoustic_lens.xy_from_alpha(acurve)
-        # Use cupy for arctan2, pi
-        gamma_1 = cp.arctan2((z_lens - zc), (x_lens - xc))
-        gamma_1 = gamma_1 + (gamma_1 < 0) * cp.pi
+
+        gamma_1 = uhp(cp.arctan2((z_lens - zc), (x_lens - xc)))
 
         # Lens Interface -> Impedance Interface
         gamma_2, inc_2, ref_2 = snell(c1, c_impedance, gamma_1, self.acoustic_lens.dydx_from_alpha(acurve))
+
         # Use cupy for tan
         a_2 = cp.tan(uhp(gamma_2))
         b_2 = z_lens - a_2 * x_lens
         alpha_2 = findIntersectionBetweenImpedanceMatchingAndRay_fast(a_2, b_2, self.acoustic_lens)
+
         # Coords. in Impedance
         x_imp, z_imp = self.acoustic_lens.xy_from_alpha(alpha_2, thickness=impedance_thickness)
 
         # Impedance Interface -> Pipe Interface
         gamma_3, inc_3, ref_3 = snell(c_impedance, c2, gamma_2, self.acoustic_lens.dydx_from_alpha(alpha_2, thickness=impedance_thickness))
+
         # Use cupy for tan
         a_3 = cp.tan(uhp(gamma_3))
         b_3 = z_imp - a_3 * x_imp
@@ -56,6 +60,7 @@ class RayTracing(RayTracingSolver):
         x_pipe_1, x_pipe_2 = roots_bhaskara(aux_a_3, aux_b_3, aux_c_3)
         z_pipe_1, z_pipe_2 = a_3 * x_pipe_1 + b_3, a_3 * x_pipe_2 + b_3
         z_upper = z_pipe_1 > z_pipe_2
+
         # Coords. in Pipe
         x_pipe = x_pipe_1 * z_upper + x_pipe_2 * (1 - z_upper)
         z_pipe = z_pipe_1 * z_upper + z_pipe_2 * (1 - z_upper)
@@ -95,6 +100,9 @@ class RayTracing(RayTracingSolver):
             'interface_pipe2focus': [inc_4, ref_4],
         }
 
+    #######################################
+    ## TOF COMPUTER FOR NN-REFLECTION ##
+    #######################################
     def get_tofs_NN(self, solution):
         n_elem = self.transducer.num_elem
         n_focii = len(solution[0]['x_lens'])
@@ -108,6 +116,7 @@ class RayTracing(RayTracingSolver):
 
         # Convert to cupy arrays for GPU calculation
         coords_transducer = cp.asarray(np.array([self.transducer.xt, self.transducer.zt]).T)
+
         # solution[0] contains numpy arrays, convert them
         coords_focus = cp.asarray(np.array([solution[0]['xf'], solution[0]['zf']]).T)
         coords_lens = cp.zeros((n_elem, 2, n_focii))
@@ -210,6 +219,9 @@ class RayTracing(RayTracingSolver):
 
         return tofs, amplitudes
 
+    #######################################
+    ## DISTANCE KERNEL FOR RR-REFLECTION ##
+    #######################################
     def _dist_kernel_RR(self, xc: float, zc: float, xf: ndarray, zf: ndarray, acurve: float):
         c1, c2, c3 = self.get_speeds()
 
@@ -222,39 +234,45 @@ class RayTracing(RayTracingSolver):
 
         # Coords. in Lens (Transducer Interface -> Lens Interface)
         x_lens, z_lens = self.acoustic_lens.xy_from_alpha(acurve)
-        # Use cupy for arctan2, pi
-        gamma_1 = cp.arctan2((z_lens - zc), (x_lens - xc))
-        gamma_1 = gamma_1 + (gamma_1 < 0) * cp.pi
+
+        gamma_1 = uhp(cp.arctan2((z_lens - zc), (x_lens - xc)))
 
         # Lens Interface -> Impedance Interface
         gamma_2, inc_2, ref_2 = snell(c1, c_impedance, gamma_1, self.acoustic_lens.dydx_from_alpha(acurve))
+
         # Use cupy for tan
         a_2 = cp.tan(uhp(gamma_2))
         b_2 = z_lens - a_2 * x_lens
         alpha_2 = findIntersectionBetweenImpedanceMatchingAndRay_fast(a_2, b_2, self.acoustic_lens)
+
         # Coords. in Impedance
         x_imp, z_imp = self.acoustic_lens.xy_from_alpha(alpha_2, thickness=impedance_thickness)
 
         # Impedance Interface -> Lens Interface
         gamma_refl_1, _, inc_refl_1, ref_refl_1 = reflection(gamma_2, self.acoustic_lens.dydx_from_alpha(alpha_2, thickness=impedance_thickness))
+
         # Use cupy for tan
         a_refl_1 = cp.tan(uhp(gamma_refl_1))
         b_refl_1 = z_imp - a_refl_1 * x_imp
         alpha_refl_1 = findIntersectionBetweenAcousticLensAndRay_fast(a_refl_1, b_refl_1, self.acoustic_lens)
+
         # Coords. in Lens
         x_lens_refl_1, z_lens_refl_1 = self.acoustic_lens.xy_from_alpha(alpha_refl_1)
 
         # Lens Interface -> Impedance Interface
         gamma_refl_2, _, inc_refl_2, ref_refl_2 = reflection(gamma_refl_1, self.acoustic_lens.dydx_from_alpha(alpha_refl_1))
+
         # Use cupy for tan
         a_refl_2 = cp.tan(uhp(gamma_refl_2))
         b_refl_2 = z_lens_refl_1 - a_refl_2 * x_lens_refl_1
         alpha_refl_2 = findIntersectionBetweenImpedanceMatchingAndRay_fast(a_refl_2, b_refl_2, self.acoustic_lens)
+
         # Coords. in Impedance
         x_imp_refl_2, z_imp_refl_2 = self.acoustic_lens.xy_from_alpha(alpha_refl_2, thickness=impedance_thickness)
 
         # Impedance Interface -> Pipe Interface
         gamma_3, inc_3, ref_3 = snell(c_impedance, c2, gamma_refl_2, self.acoustic_lens.dydx_from_alpha(alpha_refl_2, thickness=impedance_thickness))
+
         # Use cupy for tan
         a_3 = cp.tan(uhp(gamma_3))
         b_3 = z_imp_refl_2 - a_3 * x_imp_refl_2
@@ -264,6 +282,7 @@ class RayTracing(RayTracingSolver):
         x_pipe_1, x_pipe_2 = roots_bhaskara(aux_a_3, aux_b_3, aux_c_3)
         z_pipe_1, z_pipe_2 = a_3 * x_pipe_1 + b_3, a_3 * x_pipe_2 + b_3
         z_upper = z_pipe_1 > z_pipe_2
+
         # Coords. in Pipe
         x_pipe = x_pipe_1 * z_upper + x_pipe_2 * (1 - z_upper)
         z_pipe = z_pipe_1 * z_upper + z_pipe_2 * (1 - z_upper)
@@ -303,6 +322,9 @@ class RayTracing(RayTracingSolver):
             'interface_pipe2focus': [inc_4, ref_4],
         }
     
+    #######################################
+    ## TOF COMPUTER FOR RR-REFLECTION ##
+    #######################################
     def get_tofs_RR(self, solution):
         n_elem = self.transducer.num_elem
         n_focii = len(solution[0]['x_lens'])
@@ -448,6 +470,9 @@ class RayTracing(RayTracingSolver):
 
         return tofs, amplitudes
 
+    ############################################################
+    ## DISTANCE KERNEL FOR NN-REFLECTION WITHOUT IMPEDANCE ##
+    ############################################################
     def _dist_kernel_NN_without_imp(self, xc: float, zc: float, xf: ndarray, zf: ndarray, acurve: float):
         c1, c2, c3 = self.get_speeds()
 
@@ -457,12 +482,12 @@ class RayTracing(RayTracingSolver):
 
         # Coords. in Lens (Transducer Interface -> Lens Interface)
         x_lens, z_lens = self.acoustic_lens.xy_from_alpha(acurve)
-        # Use cupy for arctan2, pi
-        gamma_1 = cp.arctan2((z_lens - zc), (x_lens - xc))
-        gamma_1 = gamma_1 + (gamma_1 < 0) * cp.pi
+
+        gamma_1 = uhp(cp.arctan2((z_lens - zc), (x_lens - xc)))
 
         # Lens Interface -> Pipe Interface
         gamma_2, inc_2, ref_2 = snell(c1, c2, gamma_1, self.acoustic_lens.dydx_from_alpha(acurve))
+
         # Use cupy for tan
         a_2 = cp.tan(uhp(gamma_2))
         b_2 = z_lens - a_2 * x_lens
@@ -472,6 +497,7 @@ class RayTracing(RayTracingSolver):
         x_pipe_1, x_pipe_2 = roots_bhaskara(aux_a_2, aux_b_2, aux_c_2)
         z_pipe_1, z_pipe_2 = a_2 * x_pipe_1 + b_2, a_2 * x_pipe_2 + b_2
         z_upper = z_pipe_1 > z_pipe_2
+
         # Coords. in Pipe
         x_pipe = x_pipe_1 * z_upper + x_pipe_2 * (1 - z_upper)
         z_pipe = z_pipe_1 * z_upper + z_pipe_2 * (1 - z_upper)
@@ -506,6 +532,9 @@ class RayTracing(RayTracingSolver):
             'interface_pipe2focus': [inc_3, ref_3],
         }
 
+    #######################################################
+    ## TOF COMPUTER FOR NN-REFLECTION WITHOUT IMPEDANCE ##
+    #######################################################
     def get_tofs_NN_without_imp(self, solution):
         n_elem = self.transducer.num_elem
         n_focii = len(solution[0]['x_lens'])
@@ -599,6 +628,9 @@ class RayTracing(RayTracingSolver):
 
         return tofs, amplitudes
 
+    #######################################
+    ## TOF COMPUTER FOR RN-REFLECTION ##
+    #######################################
     def get_tofs_RN(self, solution_R, solution_N):
         """
         Calcula os TOFs para o modo RN (Ida Refletida, Volta Normal).
@@ -753,6 +785,9 @@ class RayTracing(RayTracingSolver):
 
         return tofs, amplitudes
 
+    #######################################
+    ## TOF COMPUTER FOR NR-REFLECTION ##
+    #######################################
     def get_tofs_NR(self, solution_N, solution_R):
         """
         Calcula os TOFs para o modo NR (Ida Normal, Volta Refletida).

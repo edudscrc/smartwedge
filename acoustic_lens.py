@@ -53,6 +53,9 @@ class AcousticLens:
             self.impedance_matching = None
             self.x_imp, self.z_imp = None, None
 
+    ##############################
+    ## ACOUSTIC LENS EQUATIONS  ##
+    ##############################
     def h(self, alpha):
         # Use cupy for cos, sqrt
         return (-self.b(alpha) - cp.sqrt(self.b(alpha) ** 2 - 4 * self.a * self.c)) / (2 * self.a)
@@ -103,7 +106,9 @@ class AcousticLens:
         else:
             raise ValueError("mode must be 'full' or 'parts'")
 
-    #Numpy version for plots and non-gpu initialization
+    #######################################################
+    ## NUMPY VERSION FOR PLOTS AND NON-GPU INITIALIZATION ##
+    #######################################################
     def h_np(self, alpha):
         b_alpha = 2 * self.d * np.cos(alpha) - 2 * self.T * self.c1 ** 2 / self.c2
         return (-b_alpha - np.sqrt(b_alpha ** 2 - 4 * self.a * self.c)) / (2 * self.a)

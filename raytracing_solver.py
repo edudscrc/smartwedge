@@ -35,6 +35,9 @@ class RayTracingSolver(ABC):
         c3 = self.pipeline.c if self.c3 is None else self.c3  # Pipeline material
         return c1, c2, c3
 
+    #################
+    ## TOF SOLVERS ##
+    #################
     def solve(self, xf, zf, mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3):
         # Find focii TOF:
 
@@ -77,6 +80,10 @@ class RayTracingSolver(ABC):
                 tofs, amplitudes = self.get_tofs_RR(solution)
 
             return tofs, amplitudes, solution
+
+    #################################
+    ## GRID SEARCH IMPLEMENTATIONS ##
+    #################################
 
     def _grid_search_batch(self, xf: np.ndarray, zf: np.ndarray, mode, alpha_step=1e-3, dist_tol=100, delta_alpha=30e-3) -> list:
         '''Calls the function _grid_search one time for each transducer element.
@@ -152,6 +159,7 @@ class RayTracingSolver(ABC):
             # Find alpha minimizing distance on coarse grid (on GPU)
             dist_coarse_cp = dic_coarse_distances['dist']
             alpha_coarse_min_cp = alpha_grid_coarse[cp.nanargmin(dist_coarse_cp)]
+
             # Get result back to CPU float for scipy optimizer
             alpha_coarse_min = alpha_coarse_min_cp.item()
 
@@ -221,6 +229,7 @@ class RayTracingSolver(ABC):
 
         final_results['firing_angle'] = alphaa
         # Set distances above tolerance to NaN
+
         # Use cupy.where for safe assignment with NaN
         final_results['dist'] = cp.where(final_results['dist'] >= tol, cp.nan, final_results['dist'])
 
@@ -234,6 +243,9 @@ class RayTracingSolver(ABC):
         
         return final_results_cpu
 
+    #######################
+    ## ABSTRACT METHODS  ##
+    #######################
     @abstractmethod
     def _dist_kernel_NN(self, xc: float, zc: float, xf: np.ndarray, zf: np.ndarray, acurve: np.ndarray):
         pass
