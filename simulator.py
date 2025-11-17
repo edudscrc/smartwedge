@@ -13,6 +13,7 @@ class Simulator:
     def __init__(self, sim_params: dict, raytracer_list: list, verbose: bool = True):
         self.raytracer_list = raytracer_list
         self.transducer = self.raytracer_list[0].transducer
+
         # Reflectors position:
         self.xf, self.zf = None, None
         self.verbose = verbose
@@ -61,6 +62,9 @@ class Simulator:
             }
             self.sim_list.append(sim)
 
+    ########################
+    ## SIMULATOR ROUTINES ##
+    ########################
     def __simulate(self, mode, alpha_step, dist_tol, delta_alpha):
         Nel = self.transducer.num_elem
         Nt = len(self.tspan)
@@ -82,6 +86,7 @@ class Simulator:
 
         # Pass the solver parameters from the get_response() call
         print(f"    [Sim.Kernel] Solving rays for {Nsim} reflectors (Mode: {mode})...")
+
         # solve() now returns cupy arrays for tofs and amplitudes dict
         tofs_cp, amplitudes_cp, _ = focus_raytracer.solve(
             self.xf, self.zf, mode=mode, 

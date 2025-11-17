@@ -2,14 +2,18 @@ import numpy as np
 import cupy as cp
 import numba
 
-
+####################################
+## NUMBA-ACCELERATED CPU FUNCTIONS##
+####################################
 @numba.njit(fastmath=True)
 def f_circ(x, xc, zc, r):
     # This function is from the original file, preserved for context.
     # Note: It uses numpy, so it runs on the CPU.
     return zc - np.sqrt(r**2 - (x - xc)**2)
 
-
+##############################
+## GEOMETRIC TRANSFORMATIONS##
+##############################
 def rotate(x, y, angle, shift_x=0, shift_y=0):
     # This function is from the original file, preserved for context.
     # Note: It uses numpy, so it runs on the CPU.
@@ -30,7 +34,9 @@ def circle_cartesian(r, xcenter=0.0, zcenter=0.0, angstep=1e-2):
     x, z = pol2cart(r, alpha)
     return x + xcenter, z + zcenter
 
-
+################################
+## COORDINATE SYSTEM UTILITIES##
+################################
 def pol2cart(rho, phi):
     """
     Converts polar coordinates (rho, phi) to Cartesian (x, z).
@@ -48,8 +54,9 @@ def line_equation_polar(alpha, a, b, eps=1e-12):
     safe_denom = cp.where(cp.abs(denom) < eps, cp.sign(denom) * eps, denom)
     return b / safe_denom
 
-
-# --- Custom CuPy Kernel for Coarse Search ---
+#############################################
+## CUSTOM CUPY KERNEL FOR COARSE SEARCH    ##
+#############################################
 # This kernel replaces the memory-intensive Part 1 of the original function.
 coarse_search_kernel = cp.RawKernel(r'''
 extern "C" {
@@ -172,7 +179,9 @@ extern "C" {
 }
 ''', 'find_coarse_indices')
 
-
+############################################################
+## FAST INTERSECTION FINDERS USING CUSTOM CUPY KERNEL      ##
+############################################################
 def findIntersectionBetweenImpedanceMatchingAndRay_fast(a_ray, b_ray, acoustic_lens, tol=1e-5):
     """
     Finds the intersection between rays and the impedance matching layer using

@@ -153,6 +153,10 @@ def fluid2solid_r_coeff(theta_p1, theta_p2, cp1, cp2, cs2, rho1, rho2):
 
     return Rpp
 
+
+#######################
+## DIRECTIVITY UTILS ##
+#######################
 def sinc(x):
     return sin(x) / x
 
@@ -170,6 +174,9 @@ def far_field_directivity_solid(theta, cl, cs, k, a):
     Df = far_field_directivity(k, a, theta)
     return Df * Dl
 
+###########################
+## SOUND VELOCITY UTILS  ##
+###########################
 def compute_cl_water(temperature_celsius):
     """
     Based on
