@@ -18,9 +18,13 @@ class Pipeline:
         self.xint, self.zint = circle_cartesian(self.inner_radius, self.xcenter, self.zcenter)
         self.xout, self.zout = circle_cartesian(self.outer_radius, self.xcenter, self.zcenter)
 
+    ####################
+    ## PIPELINE UTILS ##
+    ####################
     def dydx(self, x, mode='full'):
         # x is expected to be a cupy array from the raytracer
         dy = -(x - self.xcenter)
+
         # Use cp.sqrt since x is a cupy array
         dx = cp.sqrt(self.outer_radius ** 2 - (x - self.xcenter) ** 2)
         if mode == "full":

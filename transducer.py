@@ -17,14 +17,11 @@ class Transducer:
         self.element_gap = element_gap
         self.element_width = self.pitch - self.element_gap
 
+    ######################
+    ## TRANSDUCER UTILS ##
+    ######################
     def get_coords(self, i: int = -1):
         if i == -1:
             return self.xt, self.zt
         else:
             return self.xt[i], self.zt[i]
-
-    # def get_signal(self, tspan: np.ndarray, delta_t: float = 0):
-    #     if self.pulse_type == "gaussian":
-    #         return gausspulse(tspan - delta_t, fc=self.fc, bw=self.bw, bwr=self.bwr)
-    #     else:
-    #         raise NotImplementedError

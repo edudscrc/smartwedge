@@ -7,7 +7,9 @@ from numpy import ndarray
 
 FLOAT = np.float32
 
-
+#######################
+## SIMULATOR KERNELS ##
+#######################
 def dist(x1, y1, x2, y2):
     return sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
@@ -38,14 +40,18 @@ def fmc_sim_kernel(
 
     return ascan_data
 
-
+###################
+## PHYSICS UTILS ##
+###################
 @njit(fastmath=True)
 def numba_gausspulse(t, fc_Hz, bw, bwr=-6):
     ref = pow(10.0, bwr / 20.0)
     a = -((np.pi * fc_Hz * bw) ** 2) / (4.0 * np.log(ref))
     return np.real(np.exp(-a * np.power(t, 2)) * np.exp(1j * 2 * np.pi * fc_Hz * t))
 
-
+###################
+## S-SCAN UTILS  ##
+###################
 def fmc2sscan(fmc_sims: ndarray, shifts_e, shifts_r, n_elem: int):
     # From a given FMC apply the delays and compute the Summed-Scan (S-Scan):
     
