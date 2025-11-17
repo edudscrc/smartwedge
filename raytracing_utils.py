@@ -1,7 +1,9 @@
 import numpy as np
 import cupy as cp
 
-
+########################
+## MATHEMATICAL UTILS ##
+########################
 def roots_bhaskara(a, b, c):
     # Use cupy for sqrt
     sqdelta = cp.sqrt(b ** 2 - 4 * a * c)
@@ -9,7 +11,9 @@ def roots_bhaskara(a, b, c):
     x2 = (-b - sqdelta) / (2 * a)
     return x1, x2
 
-
+###################
+## PHYSICS UTILS ##
+###################
 def rhp(x):
     # Use cupy for mod, pi
     x = cp.mod(x, cp.pi)
